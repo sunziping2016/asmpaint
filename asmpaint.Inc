@@ -13,7 +13,11 @@ includelib comctl32.lib
 includelib comdlg32.lib
 includelib msvcrt.lib
 
+IDB_CONTROLS equ 100
+
 IDR_MENU equ 10000
 IDM_FILE equ 10001
 IDM_NEW  equ 10002
 IDM_OPEN equ 10003
+
+IDI_APP equ 1

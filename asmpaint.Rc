@@ -1,1 +1,2 @@
 #include "Res/asmpaintMnu.rc"
+#include "Res/asmpaintRes.rc"

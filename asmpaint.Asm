@@ -4,20 +4,69 @@
 include asmpaint.Inc
 
 .data
-   ClassName BYTE "AsmPaintClass",0
-   AppName BYTE "»­Í¼",0
 
 
-   debugWndProcMsg BYTE "%d %u %u %d",0ah,0
+    className BYTE "AsmPaintClass",0
+    appName BYTE "»­Í¼",0
+   
+    toolbarClassName BYTE "ToolbarWindow32",0
+   
+    CONTROL_BUTTON_NUM equ 16
+    g_tbControlButtons \
+        TBBUTTON <0, 0, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <1, 1, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <2, 2, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <3, 3, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <4, 4, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <5, 5, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <6, 6, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <7, 7, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <8, 8, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <9, 9, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <10, 10, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <11, 11, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <12, 12, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <13, 13, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <14, 14, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <15, 15, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+
+    debugWndProcMsg BYTE "%u %u %d",0ah,0
+.data?
+    g_hInst HINSTANCE ?
+    g_cmdLine LPTSTR ?
+    g_hWnd HWND ?
+    g_hWndLeftReBar HWND ?
+    g_hWndControl HWND ?
+    g_hImageListControl HIMAGELIST ?
 .code
 
+
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
-    invoke crt_printf, offset debugWndProcMsg, hWnd, uMsg, wParam, lParam
-    
-    .IF uMsg==WM_DESTROY
-        invoke PostQuitMessage,NULL
-    .ELSEIF uMsg==WM_CREATE
-        ;
+    LOCAL hBmp:HBITMAP
+    ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+    .IF uMsg == WM_DESTROY
+        invoke PostQuitMessage, 0
+    .ELSEIF uMsg == WM_CREATE
+        ; ==== Create Left Control Toolbar ====
+        invoke CreateWindowEx, 0, addr toolbarClassName, NULL, \
+            CCS_NODIVIDER or WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
+            hWnd, NULL, g_hInst, NULL
+        mov g_hWndControl, eax
+        invoke ImageList_Create, 16, 16, ILC_COLOR16 or ILC_MASK, CONTROL_BUTTON_NUM, 0
+        mov g_hImageListControl, eax
+        invoke LoadBitmap, g_hInst, IDB_CONTROLS
+		mov hBmp, eax
+		invoke ImageList_AddMasked, g_hImageListControl, hBmp, 0ffh
+		invoke DeleteObject, hBmp
+        invoke SendMessage, g_hWndControl, TB_SETIMAGELIST, IDB_CONTROLS, g_hImageListControl
+        invoke SendMessage, g_hWndControl, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
+        invoke SendMessage, g_hWndControl, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
+        invoke SendMessage, g_hWndControl, TB_ADDBUTTONS, CONTROL_BUTTON_NUM, offset g_tbControlButtons
+        invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
+    .ELSEIF uMsg == WM_SIZE
+        invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
+    .ELSEIF uMsg == WM_COMMAND
+        invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam        
         ret
@@ -30,7 +79,6 @@ WndProc endp
 WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     LOCAL wc:WNDCLASSEX
     LOCAL msg:MSG
-    LOCAL hWnd:HWND
     
     mov wc.cbSize, SIZEOF WNDCLASSEX
     mov wc.style, CS_HREDRAW or CS_VREDRAW
@@ -39,9 +87,10 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     mov wc.cbWndExtra, NULL
     mov eax, hInst
     mov wc.hInstance, eax
-    mov wc.hbrBackground, COLOR_BTNFACE + 1
+    invoke GetStockObject, GRAY_BRUSH
+    mov wc.hbrBackground, eax
     mov wc.lpszMenuName, IDR_MENU
-    mov wc.lpszClassName, OFFSET ClassName
+    mov wc.lpszClassName, OFFSET className
     
     invoke LoadIcon, NULL, IDI_APPLICATION
     mov wc.hIcon, eax
@@ -51,14 +100,15 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     mov wc.hCursor, eax
     
     invoke RegisterClassEx, addr wc
-    INVOKE CreateWindowEx, NULL, ADDR ClassName, ADDR AppName, \
+    invoke CreateWindowEx, NULL, ADDR className, ADDR appName, \
            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, \
            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, \
            hInst, NULL
-    mov hWnd, eax
+
+    mov g_hWnd, eax
     
-    invoke ShowWindow, hWnd, cmdShow
-    invoke UpdateWindow, hWnd
+    invoke ShowWindow, g_hWnd, cmdShow
+    invoke UpdateWindow, g_hWnd
     
     .WHILE TRUE
         invoke GetMessage, ADDR msg, NULL, 0, 0
@@ -72,14 +122,15 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
 WinMain endp
 
 start proc
-    LOCAL hInstance:HINSTANCE
-    LOCAL commandLine:LPTSTR
+    LOCAL iccx:INITCOMMONCONTROLSEX
     invoke GetModuleHandle, NULL
-    mov hInstance, eax
+    mov g_hInst, eax
     invoke GetCommandLine
-    mov commandLine, eax
-    invoke InitCommonControls
-    invoke WinMain, hInstance, NULL, commandLine, SW_SHOWDEFAULT
+    mov g_cmdLine, eax
+    mov iccx.dwSize, sizeof INITCOMMONCONTROLSEX
+    mov iccx.dwICC, ICC_BAR_CLASSES
+    invoke InitCommonControlsEx, addr iccx
+    invoke WinMain, g_hInst, NULL, g_cmdLine, SW_SHOWDEFAULT
     invoke ExitProcess, eax
 start endp
     
