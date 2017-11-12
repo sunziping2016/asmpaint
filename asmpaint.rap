@@ -129,13 +129,15 @@ GroupExpand=1,1,1,0
 [BreakPoint]
 0=
 [Find]
-1="TBBUTTON"
-2="g_tbControlButtons"
-3="WM_COMMAND"
-4=" or TBSTATE_WRAP"
-5="sizeof"
-6="\t"
-7="cmdShow"
+1="TranslateMessage"
+2="WndProc"
+3="TBBUTTON"
+4="g_tbControlButtons"
+5="WM_COMMAND"
+6=" or TBSTATE_WRAP"
+7="sizeof"
+8="\t"
+9="cmdShow"
 [Resource]
 1=IDB_CONTROLS,100,0,Res\controls.bmp
 2=ID_MANIFEST,1,8,Res\manifests.xml

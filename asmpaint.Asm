@@ -31,6 +31,8 @@ include asmpaint.Inc
         TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
+    
+    toolbar_status DWORD 00000000h ; zero if no button in menu clicked, else the ID of the button clicked
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -67,8 +69,11 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+        mov toolbar_status, 00000000h
+        mov eax, wParam
+        mov toolbar_status, eax
     .ELSE
-        invoke DefWindowProc, hWnd, uMsg, wParam, lParam        
+        invoke DefWindowProc, hWnd, uMsg, wParam, lParam      
         ret
     .ENDIF
     
