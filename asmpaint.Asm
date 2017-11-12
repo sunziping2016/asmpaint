@@ -31,8 +31,11 @@ include asmpaint.Inc
         TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
+    ;showRegs BYTE "%d %d",0ah,0; debug
     
-    toolbar_status DWORD 00000000h ; zero if no button in menu clicked, else the ID of the button clicked
+    toolbar_status DWORD 00000000h ;zero if no button in menu clicked, else the ID of the button clicked
+    ctrl_just_clicked DWORD 00000000h ;1 if CTRL was clicked right before current action, else 0
+    alt_just_clicked DWORD 00000000h ;1 if ALT was just clicked, else 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -43,9 +46,44 @@ include asmpaint.Inc
 .code
 
 
+CheckHotKey proc uMsg:UINT, wParam:WPARAM
+	;if input a combination of hot key, move the first key's ID into eax, second into ebx, else set eax and ebx to zero
+	mov eax, 00000000h
+	mov ebx, 00000000h
+	.IF uMsg == WM_KEYDOWN
+	    ;if clicked CTRL or ALT 
+	    .IF wParam == VK_CONTROL
+	    	mov ctrl_just_clicked, 00000001h
+	    	mov alt_just_clicked, 00000000h
+	    	ret
+	    .ELSEIF wParam == VK_MENU
+	        mov alt_just_clicked, 00000001h
+	        mov ctrl_just_clicked, 00000000h
+	        ret
+	    .endif
+	    ;if CTRL or ALT just clicked, check if input fits combination of hot key
+	    .IF ctrl_just_clicked == 1 && (wParam == 'N' || wParam == 'O' || wParam == 'S')
+	    	mov eax, VK_CONTROL
+	    	mov ebx, wParam
+	    .ELSEIF alt_just_clicked == 1 && wParam == VK_F4
+	        mov eax, VK_CONTROL
+	        mov ebx, wParam
+        .ENDIF
+    .ENDIF
+    ;else clear flags
+    mov ctrl_just_clicked, 00000000h
+    mov alt_just_clicked, 00000000h
+	ret
+
+CheckHotKey endp
+
+
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+    ;debug: print umsg info
+    ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+    
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
     .ELSEIF uMsg == WM_CREATE
@@ -73,6 +111,8 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         mov eax, wParam
         mov toolbar_status, eax
     .ELSE
+        invoke CheckHotKey, uMsg, wParam
+        ;invoke crt_printf, offset showRegs, eax, ebx; debug
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam      
         ret
     .ENDIF
