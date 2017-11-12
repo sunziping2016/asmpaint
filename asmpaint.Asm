@@ -14,22 +14,22 @@ include asmpaint.Inc
    
     CONTROL_BUTTON_NUM equ 16
     g_tbControlButtons \
-        TBBUTTON <0, 0, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <1, 1, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <2, 2, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <3, 3, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <4, 4, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <5, 5, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <6, 6, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <7, 7, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <8, 8, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <9, 9, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <10, 10, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <11, 11, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <12, 12, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <13, 13, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <14, 14, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <15, 15, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <1, IDM_RECT_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <2, IDM_ERASER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <3, IDM_PAINT_BARREL, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <4, IDM_COLOR_PICKER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <5, IDM_MAGNIFIER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <6, IDM_PENCIL, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <7, IDM_BRASH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <8, IDM_AIRBRUSH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <9, IDM_TEXT, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <10, IDM_STRAIGHT_LINE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <11, IDM_CURVE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <12, IDM_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <13, IDM_POLYGON, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <14, IDM_ELLIPSE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
 
     g_canvasPositionRect RECT <0, 0, 800, 1200> ;Canvas position relative to canvas window
     g_canvasOffsetX DWORD 0
@@ -40,6 +40,11 @@ include asmpaint.Inc
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
+    ;showRegs BYTE "%d %d",0ah,0; debug
+    
+    toolbar_status DWORD 00000000h ;zero if no button in menu clicked, else the ID of the button clicked
+    ctrl_just_clicked DWORD 00000000h ;1 if CTRL was clicked right before current action, else 0
+    alt_just_clicked DWORD 00000000h ;1 if ALT was just clicked, else 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -79,11 +84,46 @@ CalculateCanvasPosition proc hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
 CalculateCanvasPosition endp
 
 
+CheckHotKey proc uMsg:UINT, wParam:WPARAM
+	;if input a combination of hot key, move the first key's ID into eax, second into ebx, else set eax and ebx to zero
+	mov eax, 00000000h
+	mov ebx, 00000000h
+	.IF uMsg == WM_KEYDOWN
+	    ;if clicked CTRL or ALT 
+	    .IF wParam == VK_CONTROL
+	    	mov ctrl_just_clicked, 00000001h
+	    	mov alt_just_clicked, 00000000h
+	    	ret
+	    .ELSEIF wParam == VK_MENU
+	        mov alt_just_clicked, 00000001h
+	        mov ctrl_just_clicked, 00000000h
+	        ret
+	    .endif
+	    ;if CTRL or ALT just clicked, check if input fits combination of hot key
+	    .IF ctrl_just_clicked == 1 && (wParam == 'N' || wParam == 'O' || wParam == 'S')
+	    	mov eax, VK_CONTROL
+	    	mov ebx, wParam
+	    .ELSEIF alt_just_clicked == 1 && wParam == VK_F4
+	        mov eax, VK_CONTROL
+	        mov ebx, wParam
+        .ENDIF
+    .ENDIF
+    ;else clear flags
+    mov ctrl_just_clicked, 00000000h
+    mov alt_just_clicked, 00000000h
+	ret
+
+CheckHotKey endp
+
+
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
     
     ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+    ;debug: print umsg info
+    ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+    
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
     .ELSEIF uMsg == WM_CREATE
@@ -124,8 +164,13 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+        mov toolbar_status, 00000000h
+        mov eax, wParam
+        mov toolbar_status, eax
     .ELSE
-        invoke DefWindowProc, hWnd, uMsg, wParam, lParam        
+        invoke CheckHotKey, uMsg, wParam
+        ;invoke crt_printf, offset showRegs, eax, ebx; debug
+        invoke DefWindowProc, hWnd, uMsg, wParam, lParam      
         ret
     .ENDIF
     
