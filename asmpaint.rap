@@ -66,7 +66,7 @@ MilestoneOnTime=2
 MilestoneOnDate=0
 MilestoneOnDateWhen=1
 MilestoneOnDateStatus=0
-MilestoneOnDateDate=7
+MilestoneOnDateDate=12
 MilestoneOnDateTimeYear=2017
 MilestoneOnDateTimeMonth=11
 MilestoneOnDateTimeDate=6
@@ -99,7 +99,7 @@ ProductVer4Range=0
 6=00FFFFFF
 7=00FFFFFF
 [PTimer]
-PTimer=89294702
+PTimer=118243968
 [Collapse]
 1=
 2=
@@ -107,7 +107,7 @@ PTimer=89294702
 5=
 6=
 [Size]
-1=0,0,0,0,3069
+1=0,0,0,0,2930
 2=0,0,0,0,390
 3=0,0,0,0,55
 4=
@@ -129,10 +129,13 @@ GroupExpand=1,1,1,0
 [BreakPoint]
 0=
 [Find]
-1=" or TBSTATE_WRAP"
-2="sizeof"
-3="\t"
-4="cmdShow"
+1="TBBUTTON"
+2="g_tbControlButtons"
+3="WM_COMMAND"
+4=" or TBSTATE_WRAP"
+5="sizeof"
+6="\t"
+7="cmdShow"
 [Resource]
 1=IDB_CONTROLS,100,0,Res\controls.bmp
 2=ID_MANIFEST,1,8,Res\manifests.xml
