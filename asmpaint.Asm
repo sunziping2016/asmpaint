@@ -31,12 +31,13 @@ include asmpaint.Inc
         TBBUTTON <14, IDM_ELLIPSE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
         TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
 
-    g_canvasPositionRect RECT <0, 0, 800, 1200> ;Canvas position relative to canvas window
+    g_canvasPositionRect RECT <0, 0, 800, 800> ;Canvas position relative to canvas window
     g_canvasOffsetX DWORD 0
     g_canvasOffsetY DWORD 0
+    g_zoom DWORD 4
     
-    SCROLL_STEP_PIXEL equ 5
-    SCROLL_MOVE_STEPS equ 20
+    SCROLL_STEP_PIXEL equ 4
+    SCROLL_MOVE_STEPS equ 25
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
@@ -57,7 +58,8 @@ include asmpaint.Inc
     
 .code
 
-CalculateCanvasPosition proc hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
+CalculateCanvasPosition proc USES esi,
+    hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
     LOCAL toolbarRect:RECT
     LOCAL hWndRect:RECT
     
@@ -143,7 +145,37 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     ret
 WndProc endp
 
-CanvasWinProc proc USES ebx,
+
+CalculateOffset proc hWnd:HWND
+    LOCAL scrollbarInfo:SCROLLINFO
+    
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
+    invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov edx, SCROLL_STEP_PIXEL
+    mul edx
+    mov ebx, g_zoom
+    xor edx, edx
+    div ebx
+    mov g_canvasOffsetY, eax
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
+    invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov edx, SCROLL_STEP_PIXEL
+    mul edx
+    mov ebx, g_zoom
+    xor edx, edx
+    div ebx
+    mov g_canvasOffsetX, eax
+    ;invoke crt_printf, offset debugPrintInt, g_canvasOffsetY
+    ;invoke crt_printf, offset debugPrintInt, g_canvasOffsetX
+    ret
+CalculateOffset endp
+        
+
+CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hdc:HDC
     LOCAL ps:PAINTSTRUCT
@@ -155,16 +187,22 @@ CanvasWinProc proc USES ebx,
     LOCAL iVertPos:DWORD
     LOCAL iHorzPos:DWORD
     LOCAL scrollBarMsgPara:DWORD
+    LOCAL canvasWidthMinusOffsetX:DWORD
+    LOCAL canvasHeightMinusOffsetY:DWORD
+    LOCAL widthAfterZoom:DWORD
+    LOCAL heightAfterZoom:DWORD
     
     .IF uMsg == WM_CREATE
-        ; ===== Create HDC Buffer =====
         mov canvasRect.left, 0
         mov canvasRect.top, 0
+        ; g_canvasPositionRect.right: width
         mov eax, g_canvasPositionRect.right
         mov canvasRect.right, eax
+        ; g_canvasPositionRect.right: height
         mov eax, g_canvasPositionRect.bottom
         mov canvasRect.bottom, eax
         
+        ; ===== Create HDC Buffer =====
         invoke GetDC, hWnd
         mov hdc, eax
         invoke CreateCompatibleDC, hdc
@@ -193,6 +231,8 @@ CanvasWinProc proc USES ebx,
         div ebx
         mov scrollbarInfo.nPage, eax
         mov eax, g_canvasPositionRect.bottom
+        mov edx, g_zoom
+        mul edx
         mov ebx, SCROLL_STEP_PIXEL
         xor edx, edx
         div ebx 
@@ -210,6 +250,8 @@ CanvasWinProc proc USES ebx,
         div ebx
         mov scrollbarInfo.nPage, eax
         mov eax, g_canvasPositionRect.right
+        mov edx, g_zoom
+        mul edx
         mov ebx, SCROLL_STEP_PIXEL
         xor edx, edx
         div ebx 
@@ -227,6 +269,7 @@ CanvasWinProc proc USES ebx,
         mov eax, esi
         movzx edx, ax
         mov scrollBarMsgPara, edx
+        ;invoke crt_printf, offset debugPrintInt, edx
         .IF scrollBarMsgPara == SB_LINEUP
             sub scrollbarInfo.nPos, SCROLL_MOVE_STEPS
         .ELSEIF scrollBarMsgPara == SB_LINEDOWN
@@ -240,7 +283,7 @@ CanvasWinProc proc USES ebx,
         invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
         mov eax, iVertPos
         .IF eax != scrollbarInfo.nPos
-            invoke InvalidateRect, hWnd, addr g_canvasPositionRect, FALSE
+            invoke InvalidateRect, hWnd, NULL, FALSE
         .ENDIF  
         
     .ELSEIF uMsg == WM_HSCROLL
@@ -267,42 +310,51 @@ CanvasWinProc proc USES ebx,
         invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
         mov eax, iHorzPos
         .IF eax != scrollbarInfo.nPos
-            invoke InvalidateRect, hWnd, addr g_canvasPositionRect, FALSE
+            invoke InvalidateRect, hWnd, NULL, FALSE
         .ENDIF
         
     .ELSEIF uMsg == WM_PAINT
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
-        invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
-        mov eax, scrollbarInfo.nPos
-        mov edx, SCROLL_STEP_PIXEL
-        mul edx
-        mov g_canvasOffsetY, eax
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
-        invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
-        mov eax, scrollbarInfo.nPos
-        mov edx, SCROLL_STEP_PIXEL
-        mul edx
-        mov g_canvasOffsetX, eax
-        invoke crt_printf, offset debugPrintInt, g_canvasOffsetX
-        invoke crt_printf, offset debugPrintInt, g_canvasOffsetY
+        invoke CalculateOffset, hWnd
         
         invoke BeginPaint, hWnd, addr ps
         mov hdc, eax
+        
         invoke MoveToEx, g_hdcBuf, 0, 0, NULL
         ;invoke crt_rand
         invoke LineTo, g_hdcBuf, 900, 900
+        invoke Rectangle, g_hdcBuf, 20, 20, 100, 100
+        invoke MoveToEx, g_hdcBuf, 10, 10, NULL
+        ;invoke crt_rand
+        invoke LineTo, g_hdcBuf, 10, 100
         
+        mov esi, lParam
+        mov eax, esi
+        movzx edx, ax
+        mov cxClient, edx
+        shr eax, 8 * SIZEOF WORD
+        mov cyClient, eax
         invoke SetDCBrushColor, hdc, 0abababh
-        invoke Rectangle, hdc, 0, 0, g_canvasPositionRect.right, g_canvasPositionRect.bottom
+        invoke Rectangle, hdc, 0, 0, 2000, 2000
         
         mov eax, g_canvasPositionRect.right
         sub eax, g_canvasOffsetX
-        mov edx, g_canvasPositionRect.bottom
-        sub edx, g_canvasOffsetY
-        invoke BitBlt, hdc, g_canvasPositionRect.left, g_canvasPositionRect.top, eax, \
-               edx, g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, SRCCOPY
+        mov canvasWidthMinusOffsetX, eax
+        mov ebx, g_zoom
+        mul ebx
+        mov widthAfterZoom, eax
+        mov eax, g_canvasPositionRect.bottom
+        sub eax, g_canvasOffsetY
+        mov canvasHeightMinusOffsetY, eax
+        mov ebx, g_zoom
+        mul ebx
+        mov heightAfterZoom, eax
+        invoke crt_printf, offset debugPrintInt, canvasWidthMinusOffsetX
+        invoke crt_printf, offset debugPrintInt, widthAfterZoom
+        invoke crt_printf, offset debugPrintInt, canvasHeightMinusOffsetY
+        invoke crt_printf, offset debugPrintInt, heightAfterZoom
+        invoke StretchBlt , hdc, g_canvasPositionRect.left, g_canvasPositionRect.top, widthAfterZoom, heightAfterZoom, \
+               g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, canvasWidthMinusOffsetX, canvasHeightMinusOffsetY, \
+               SRCCOPY
         invoke EndPaint, hWnd, addr ps
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
