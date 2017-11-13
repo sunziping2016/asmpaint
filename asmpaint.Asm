@@ -89,10 +89,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL canvasWndRect:RECT
     
     ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
-    ;debug: print umsg info
-    ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
-    ;debug
-    invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
     
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
@@ -133,7 +129,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
         
     .ELSEIF uMsg == WM_COMMAND
-        ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+        invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         mov toolbar_status, 00000000h
         mov eax, wParam
         mov toolbar_status, eax
