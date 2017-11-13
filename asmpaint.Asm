@@ -40,7 +40,7 @@ include asmpaint.Inc
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
-    ;showRegs BYTE "%d %d",0ah,0; debug
+    ;showRegs BYTE "%d",0ah,0; debug
     
     toolbar_status DWORD 00000000h ;zero if no button in menu clicked, else the ID of the button clicked
     ctrl_just_clicked DWORD 00000000h ;1 if CTRL was clicked right before current action, else 0
@@ -84,38 +84,6 @@ CalculateCanvasPosition proc hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
 CalculateCanvasPosition endp
 
 
-CheckHotKey proc uMsg:UINT, wParam:WPARAM
-	;if input a combination of hot key, move the first key's ID into eax, second into ebx, else set eax and ebx to zero
-	mov eax, 00000000h
-	mov ebx, 00000000h
-	.IF uMsg == WM_KEYDOWN
-	    ;if clicked CTRL or ALT 
-	    .IF wParam == VK_CONTROL
-	    	mov ctrl_just_clicked, 00000001h
-	    	mov alt_just_clicked, 00000000h
-	    	ret
-	    .ELSEIF wParam == VK_MENU
-	        mov alt_just_clicked, 00000001h
-	        mov ctrl_just_clicked, 00000000h
-	        ret
-	    .endif
-	    ;if CTRL or ALT just clicked, check if input fits combination of hot key
-	    .IF ctrl_just_clicked == 1 && (wParam == 'N' || wParam == 'O' || wParam == 'S')
-	    	mov eax, VK_CONTROL
-	    	mov ebx, wParam
-	    .ELSEIF alt_just_clicked == 1 && wParam == VK_F4
-	        mov eax, VK_CONTROL
-	        mov ebx, wParam
-        .ENDIF
-    .ENDIF
-    ;else clear flags
-    mov ctrl_just_clicked, 00000000h
-    mov alt_just_clicked, 00000000h
-	ret
-
-CheckHotKey endp
-
-
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
@@ -123,6 +91,8 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
     ;debug: print umsg info
     ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+    ;debug
+    invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
     
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
@@ -163,13 +133,12 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
         
     .ELSEIF uMsg == WM_COMMAND
-        invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+        ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         mov toolbar_status, 00000000h
         mov eax, wParam
         mov toolbar_status, eax
     .ELSE
-        invoke CheckHotKey, uMsg, wParam
-        ;invoke crt_printf, offset showRegs, eax, ebx; debug
+        ;invoke crt_printf, offset showRegs, eax, ebx;debug
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam      
         ret
     .ENDIF
@@ -399,6 +368,11 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     
     invoke ShowWindow, g_hWnd, cmdShow
     invoke UpdateWindow, g_hWnd
+    
+    invoke RegisterHotKey, g_hWnd, IDHK_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
+    invoke RegisterHotKey, g_hWnd, IDHK_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
+    invoke RegisterHotKey, g_hWnd, IDHK_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
+    invoke RegisterHotKey, g_hWnd, IDHK_QUIT, MOD_ALT or MOD_NOREPEAT, VK_F4
     
     .WHILE TRUE
         invoke GetMessage, ADDR msg, NULL, 0, 0

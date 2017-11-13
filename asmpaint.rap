@@ -142,26 +142,15 @@ GroupExpand=1,1,1,0
 [BreakPoint]
 0=
 [Find]
-<<<<<<< HEAD
-1="g_canvasPositionRect"
-2="crt_printf"
-3="canvasRect"
-4="cmdShow"
-5="g_hWnd"
+1="g_hWnd"
+2="g_canvasPositionRect"
+3="crt_printf"
+4="canvasRect"
+5="cmdShow"
 6="hWnd"
 7=" or TBSTATE_WRAP"
 8="sizeof"
 9="\t"
-=======
-1="TranslateMessage"
-2="WndProc"
-3="TBBUTTON"
-4="g_tbControlButtons"
-5="WM_COMMAND"
-6=" or TBSTATE_WRAP"
-7="sizeof"
-8="\t"
-9="cmdShow"
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
 [Resource]
 1=IDB_CONTROLS,100,0,Res\controls.bmp
