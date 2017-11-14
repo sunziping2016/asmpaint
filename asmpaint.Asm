@@ -41,6 +41,11 @@ include asmpaint.Inc
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
     ;showRegs BYTE "%d",0ah,0; debug
+    ;debug
+    showDraggedFileNum BYTE "Dragged file num: %d", 0ah, 0
+    
+    ;dragged file name
+    draggedFileNameLength BYTE 50
     
     toolbar_status DWORD 00000000h ;zero if no button in menu clicked, else the ID of the button clicked
     ctrl_just_clicked DWORD 00000000h ;1 if CTRL was clicked right before current action, else 0
@@ -88,8 +93,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
     
-    ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
-    
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
     .ELSEIF uMsg == WM_CREATE
@@ -127,14 +130,28 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke CalculateCanvasPosition, g_hWnd, g_hWndControl, addr canvasWndRect
         invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
-        
+    
+    .ELSEIF uMsg == WM_HOTKEY
+    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
+    
     .ELSEIF uMsg == WM_COMMAND
+        ;debug
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         mov toolbar_status, 00000000h
         mov eax, wParam
         mov toolbar_status, eax
+    .ELSEIF uMsg == WM_DROPFILES
+    	invoke DragQueryFile, wParam, 0FFFFFFFFh, NULL, 0
+    	;debug
+    	invoke crt_printf, offset showDraggedFileNum, eax
+    	mov ecx, eax
+    	.WHILE ecx > 0
+    	    ;invoke DragQueryFile, wParam, eax - ecx, offset draggedFileName, draggedFileNameLength
+    		dec ecx
+    	.endw
+    	
     .ELSE
-        ;invoke crt_printf, offset showRegs, eax, ebx;debug
+        ;debug
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam      
         ret
     .ENDIF
@@ -361,6 +378,9 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
            hInst, NULL
 
     mov g_hWnd, eax
+    
+    ; ==== Enable drag and drop ====
+    invoke DragAcceptFiles, g_hWnd, TRUE
     
     invoke ShowWindow, g_hWnd, cmdShow
     invoke UpdateWindow, g_hWnd

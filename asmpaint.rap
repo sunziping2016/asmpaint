@@ -49,7 +49,7 @@ Group=Assembly,Resources,Misc
 5=2
 6=3
 [AutoLoad]
-AutoLoad=1
+AutoLoad=1,2
 [RADebugBP]
 2=
 3=
@@ -67,7 +67,7 @@ MilestoneOnDate=0
 MilestoneOnDateWhen=1
 MilestoneOnDateStatus=0
 <<<<<<< HEAD
-MilestoneOnDateDate=12
+MilestoneOnDateDate=13
 =======
 MilestoneOnDateDate=13
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
@@ -104,20 +104,20 @@ ProductVer4Range=0
 7=00FFFFFF
 [PTimer]
 <<<<<<< HEAD
-PTimer=155822186
+PTimer=185836952
 =======
 PTimer=124760421
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
 [Collapse]
-1=2048
+1=
 2=
 3=
 5=
 6=
 [Size]
 <<<<<<< HEAD
-1=0,0,0,0,750
-2=0,0,0,0,390
+1=0,0,0,0,5868
+2=0,0,0,0,842
 =======
 1=0,0,0,0,2044
 2=0,0,0,0,357
@@ -142,15 +142,16 @@ GroupExpand=1,1,1,0
 [BreakPoint]
 0=
 [Find]
-1="g_hWnd"
-2="g_canvasPositionRect"
-3="crt_printf"
-4="canvasRect"
-5="cmdShow"
-6="hWnd"
-7=" or TBSTATE_WRAP"
-8="sizeof"
-9="\t"
+1="g_hWndControl"
+2="SendMessage"
+3="g_hWnd"
+4="g_canvasPositionRect"
+5="crt_printf"
+6="canvasRect"
+7="cmdShow"
+8="hWnd"
+9=" or TBSTATE_WRAP"
+10="sizeof"
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
 [Resource]
 1=IDB_CONTROLS,100,0,Res\controls.bmp
