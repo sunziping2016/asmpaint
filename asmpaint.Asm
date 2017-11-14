@@ -31,6 +31,10 @@ include asmpaint.Inc
         TBBUTTON <14, IDM_ELLIPSE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
         TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
 
+    openFileDialogName BYTE "打开", 0
+    openFileFilterPattern BYTE "位图文件 (*.bmp)", 0, "*.bmp", 0, 0
+    MAX_FILE_NAME_SIZE equ 256  ; should be at least 256 bytes
+
     g_canvasWidth DWORD 800
     g_canvasHeight DWORD 600
     g_canvasOffsetX DWORD 0
@@ -54,6 +58,7 @@ include asmpaint.Inc
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
+    fileName BYTE 256 dup(MAX_FILE_NAME_SIZE)
     
 .code
 
@@ -87,6 +92,26 @@ CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasR
     ret
 CalculateCanvasWindowPosition endp
 
+OpenOpenFileDialog proc hWnd:HWND
+    LOCAL openFileStruct:OPENFILENAME
+    mov openFileStruct.lStructSize, SIZEOF openFileStruct
+    mov eax, hWnd
+    mov openFileStruct.hwndOwner, eax
+    mov openFileStruct.hInstance, NULL
+    mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
+    mov openFileStruct.lpstrCustomFilter, NULL
+    mov openFileStruct.nFilterIndex, 0
+    mov [fileName], 0
+    mov openFileStruct.lpstrFile, OFFSET fileName
+    mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
+    mov openFileStruct.lpstrFileTitle, NULL
+    mov openFileStruct.nMaxFileTitle, 0
+    mov openFileStruct.lpstrInitialDir, NULL
+    mov openFileStruct.lpstrTitle, OFFSET openFileDialogName
+    mov openFileStruct.Flags, OFN_PATHMUSTEXIST
+    invoke GetOpenFileName, addr openFileStruct
+    ret
+OpenOpenFileDialog endp
 
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
@@ -127,10 +152,16 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
-        mov eax, wParam
-        mov g_toolbarStatus, eax
+        .IF wParam == IDM_OPEN
+            invoke OpenOpenFileDialog, hWnd
+            invoke crt_puts, offset fileName
+            call DestoryCanvas
+        .ELSE
+            mov eax, wParam
+            mov g_toolbarStatus, eax
+        .ENDIF
     .ELSE
-        invoke DefWindowProc, hWnd, uMsg, wParam, lParam      
+        invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
     .ENDIF
     
@@ -179,6 +210,12 @@ CreateCanvas proc hWnd:HWND
     invoke ReleaseDC, hWnd, hdc
     ret
 CreateCanvas endp
+
+DestoryCanvas proc
+    invoke DeleteObject, g_hdcBitmap
+    invoke DeleteDC, g_hdcBuf
+    ret
+DestoryCanvas endp
 
 ClearCanvas proc
     LOCAL canvasRect:RECT
@@ -318,11 +355,9 @@ CanvasWinProc proc USES ebx esi,
         mov hdc, eax
         
         invoke MoveToEx, g_hdcBuf, 0, 0, NULL
-        ;invoke crt_rand
         invoke LineTo, g_hdcBuf, 900, 900
         invoke Rectangle, g_hdcBuf, 20, 20, 100, 100
         invoke MoveToEx, g_hdcBuf, 10, 10, NULL
-        ;invoke crt_rand
         invoke LineTo, g_hdcBuf, 10, 100
         
         mov eax, g_canvasWidth
@@ -337,10 +372,6 @@ CanvasWinProc proc USES ebx esi,
         mov ebx, g_zoom
         mul ebx
         mov heightAfterZoom, eax
-        invoke crt_printf, offset debugPrintInt, canvasWidthMinusOffsetX
-        invoke crt_printf, offset debugPrintInt, widthAfterZoom
-        invoke crt_printf, offset debugPrintInt, canvasHeightMinusOffsetY
-        invoke crt_printf, offset debugPrintInt, heightAfterZoom
         invoke StretchBlt , hdc, 0, 0, widthAfterZoom, heightAfterZoom, \
                g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, canvasWidthMinusOffsetX, canvasHeightMinusOffsetY, \
                SRCCOPY

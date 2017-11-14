@@ -49,7 +49,7 @@ Group=Assembly,Resources,Misc
 5=2
 6=3
 [AutoLoad]
-AutoLoad=1
+AutoLoad=1,5,3,2
 [RADebugBP]
 2=
 3=
@@ -104,7 +104,7 @@ ProductVer4Range=0
 7=00FFFFFF
 [PTimer]
 <<<<<<< HEAD
-PTimer=159239295
+PTimer=172213388
 =======
 PTimer=124760421
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
@@ -117,11 +117,11 @@ PTimer=124760421
 [Size]
 <<<<<<< HEAD
 <<<<<<< HEAD
-1=0,0,0,0,12389
+1=0,0,0,0,5414
 =======
 1=0,0,0,0,2662
 >>>>>>> f9f0eed280d65a993849125f1660f8e477b89d59
-2=0,0,0,0,390
+2=0,0,0,0,358
 =======
 1=0,0,0,0,2044
 2=0,0,0,0,357
