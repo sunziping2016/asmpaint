@@ -49,7 +49,7 @@ Group=Assembly,Resources,Misc
 5=2
 6=3
 [AutoLoad]
-AutoLoad=1
+AutoLoad=1,2
 [RADebugBP]
 2=
 3=
@@ -104,7 +104,7 @@ ProductVer4Range=0
 7=00FFFFFF
 [PTimer]
 <<<<<<< HEAD
-PTimer=159239295
+PTimer=176532639
 =======
 PTimer=124760421
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
@@ -117,11 +117,11 @@ PTimer=124760421
 [Size]
 <<<<<<< HEAD
 <<<<<<< HEAD
-1=0,0,0,0,12389
+1=0,0,0,0,4363
 =======
 1=0,0,0,0,2662
 >>>>>>> f9f0eed280d65a993849125f1660f8e477b89d59
-2=0,0,0,0,390
+2=0,0,0,0,795
 =======
 1=0,0,0,0,2044
 2=0,0,0,0,357
@@ -146,28 +146,16 @@ GroupExpand=1,1,1,0
 [BreakPoint]
 0=
 [Find]
-<<<<<<< HEAD
-1="g_canvasPositionRect"
-2="getWindowRect"
-3="mov eax, g_canvasPositionRect.bottom"
-4="g_hWnd"
-5="crt_printf"
-6="canvasRect"
-7="cmdShow"
-8="hWnd"
-9=" or TBSTATE_WRAP"
-10="sizeof"
-=======
-1="canvasRect"
-2="toolbar_status"
-3="g_canvasPositionRect"
-4="SetWindowPos"
-5="USE"
-6="alt_just_clicked"
-7="ctrl_just_clicked"
-8="g_hWnd"
-9="crt_printf"
-10="cmdShow"
+1="setCanvas"
+2="setColor"
+3="IDB_CONTROLS"
+4="GETDC"
+5="debugPrintInt"
+6="Rectangle"
+7="g_hdcBitmap"
+8="CONTROL_BUTTON_NUM"
+9="print"
+10="g_canvasPositionRect"
 >>>>>>> f9f0eed280d65a993849125f1660f8e477b89d59
 >>>>>>> bfdd194f97132ae845c2cfa9725201f81c57ace7
 [Resource]
