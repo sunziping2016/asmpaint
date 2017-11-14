@@ -56,15 +56,15 @@ include asmpaint.Inc
     g_customColors DWORD 16 DUP(0ffffffh)
     g_foregroundColor DWORD 0
     g_backgroundColor DWORD 0ffffffh
-    jpgSuffix BYTE ".jpg", 0
-    jpegSuffix BYTE ".jpeg", 0
-    pngSuffix BYTE ".png", 0
-    bmpSuffix BYTE ".bmp", 0
-    JPGSuffix BYTE ".JPG", 0
-    JPEGSuffix BYTE ".JPEG", 0
-    PNGSuffix BYTE ".PNG", 0
+    ;jpgSuffix BYTE ".jpg", 0
+    ;jpegSuffix BYTE ".jpeg", 0
+    ;pngSuffix BYTE ".png", 0
+    ;bmpSuffix BYTE ".bmp", 0
+    ;JPGSuffix BYTE ".JPG", 0
+    ;JPEGSuffix BYTE ".JPEG", 0
+    ;PNGSuffix BYTE ".PNG", 0
     BMPSuffix BYTE ".BMP", 0
-    suffixes DWORD offset jpgSuffix, offset jpegSuffix, offset pngSuffix, offset bmpSuffix, offset JPGSuffix, offset JPEGSuffix, offset PNGSuffix, offset BMPSuffix
+    suffixes DWORD offset BMPSuffix;jpgSuffix, offset jpegSuffix, offset pngSuffix, offset bmpSuffix, offset JPGSuffix, offset JPEGSuffix, offset PNGSuffix, offset BMPSuffix
     fileSuffixPtr DWORD 00000000h
     
     count DWORD ?
@@ -352,15 +352,16 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_DROPFILES
     	invoke DragQueryFile, wParam, 0FFFFFFFFh, NULL, 0
     	mov count, eax
+    	;debug
     	invoke crt_printf, offset showDraggedFileNum, eax
     	
     	mov ecx, count
     	mov ebx, 0
     Loop_open_files:
     	mov count, ecx
-    	invoke DragQueryFile, wParam, ebx, offset fileName, MAX_FILE_NAME_SIZE
+    	invoke DragQueryFile, wParam, ebx, offset g_bitmapName, MAX_FILE_NAME_SIZE
     	inc ebx
-    	invoke PathFindExtension, offset fileName
+    	invoke PathFindExtension, offset g_bitmapName
     	mov fileSuffixPtr, eax
     	    
     	mov ecx, LENGTHOF suffixes
@@ -371,8 +372,10 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     	.IF eax == 0
     	    ;open file here
     	    ;debug
-    	    invoke crt_printf, offset showFileToOpen
-    	    invoke crt_printf, offset fileName
+    	    ;invoke crt_printf, offset showFileToOpen
+    	    ;invoke crt_printf, offset g_bitmapName
+    	    invoke CreateFile, offset g_bitmapName, GENERIC_READ or GENERIC_WRITE, FILE_SHARE_DELETE or FILE_SHARE_READ or FILE_SHARE_WRITE, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL
+    	    invoke LoadBitmapFromFile, g_hWnd
     	.endif
     	add esi, 4
     	pop ecx
