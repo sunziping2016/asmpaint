@@ -68,11 +68,74 @@ include asmpaint.Inc
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
-    fileName BYTE MAX_FILE_NAME_SIZE dup(?)
+    g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(?)
     
 .code
 
+CreateCanvas proc hWnd:HWND
+    LOCAL hdc: HDC
+    invoke GetDC, hWnd
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov g_hdcBuf, eax
+    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasWidth
+    mov g_hdcBitmap, eax
+    invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    invoke ReleaseDC, hWnd, hdc
+    ret
+CreateCanvas endp
 
+DestoryCanvas proc
+    invoke DeleteObject, g_hdcBitmap
+    invoke DeleteDC, g_hdcBuf
+    ret
+DestoryCanvas endp
+
+UpdateScrollBarSize proc USES ebx,
+    hWnd:HWND
+    LOCAL scrollbarInfo:SCROLLINFO
+    LOCAL clientRect:RECT
+    
+    invoke GetClientRect, hWnd, addr clientRect
+    
+    ; ==== Update Vertical Scrollbar ====
+        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
+        mov scrollbarInfo.nMin, 0
+        mov eax, clientRect.bottom
+        mov ebx, SCROLL_STEP_PIXEL
+        xor edx, edx
+        div ebx
+        mov scrollbarInfo.nPage, eax
+        mov eax, g_canvasHeight
+        mov edx, g_zoom
+        mul edx
+        mov ebx, SCROLL_STEP_PIXEL
+        xor edx, edx
+        div ebx 
+        mov scrollbarInfo.nMax, eax
+        invoke SetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo, TRUE
+        
+        ; ==== Update Horizontal Scrollbar ====
+        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
+        mov scrollbarInfo.nMin, 0
+        mov eax, clientRect.right
+        mov ebx, SCROLL_STEP_PIXEL
+        xor edx, edx
+        div ebx
+        mov scrollbarInfo.nPage, eax
+        mov eax, g_canvasWidth
+        mov edx, g_zoom
+        mul edx
+        mov ebx, SCROLL_STEP_PIXEL
+        xor edx, edx
+        div ebx 
+        mov scrollbarInfo.nMax, eax
+        invoke SetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo, TRUE
+        
+    ret
+UpdateScrollBarSize endp
 
 CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
     ; Note: canvasRect.left = left pos,  canvasRect.right  = width
@@ -105,8 +168,8 @@ OpenOpenFileDialog proc hWnd:HWND
     mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
     mov openFileStruct.lpstrCustomFilter, NULL
     mov openFileStruct.nFilterIndex, 0
-    mov fileName, 0
-    mov openFileStruct.lpstrFile, OFFSET fileName
+    mov g_bitmapName, 0
+    mov openFileStruct.lpstrFile, OFFSET g_bitmapName
     mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
     mov openFileStruct.lpstrFileTitle, NULL
     mov openFileStruct.nMaxFileTitle, 0
@@ -117,6 +180,31 @@ OpenOpenFileDialog proc hWnd:HWND
     invoke GetOpenFileName, addr openFileStruct
     ret
 OpenOpenFileDialog endp
+
+LoadBitmapFromFile proc hWnd:HWND
+    LOCAL bm:BITMAP
+    LOCAL bitmapHandle:HANDLE
+    invoke LoadImage, NULL, OFFSET g_bitmapName, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE
+    mov bitmapHandle, eax
+    .IF eax == NULL
+        ret
+    .endif
+    invoke GetObject, bitmapHandle, SIZEOF bm, addr bm
+    mov eax, bm.bmWidth
+    mov g_canvasWidth, eax
+    mov eax, bm.bmHeight
+    mov g_canvasHeight, eax
+    call DestoryCanvas
+    invoke GetDC, hWnd
+    invoke CreateCompatibleDC, eax
+    mov g_hdcBuf, eax
+    mov eax, bitmapHandle
+    mov g_hdcBitmap, eax
+    invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    invoke UpdateScrollBarSize, hWnd
+    invoke InvalidateRect, hWnd, NULL, TRUE
+    ret
+LoadBitmapFromFile endp
 
 SetCanvasColor proc index:DWORD, color:DWORD
     ; if index == 0, set `color' as foreground color
@@ -238,8 +326,10 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
             invoke OpenOpenFileDialog, hWnd
-            invoke crt_puts, offset fileName
-            call DestoryCanvas
+            .IF g_bitmapName != 0
+                invoke crt_puts, offset g_bitmapName
+                invoke LoadBitmapFromFile, g_hWndCanvas
+            .ENDIF
         .ELSEIF wParam == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
@@ -292,30 +382,9 @@ CalculateOffset proc hWnd:HWND
     xor edx, edx
     div ebx
     mov g_canvasOffsetX, eax
-    ;invoke crt_printf, offset debugPrintInt, g_canvasOffsetY
-    ;invoke crt_printf, offset debugPrintInt, g_canvasOffsetX
     ret
 CalculateOffset endp
         
-CreateCanvas proc hWnd:HWND
-    LOCAL hdc: HDC
-    invoke GetDC, hWnd
-    mov hdc, eax
-    invoke CreateCompatibleDC, hdc
-    mov g_hdcBuf, eax
-    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasWidth
-    mov g_hdcBitmap, eax
-    invoke SelectObject, g_hdcBuf, g_hdcBitmap
-    invoke ReleaseDC, hWnd, hdc
-    ret
-CreateCanvas endp
-
-DestoryCanvas proc
-    invoke DeleteObject, g_hdcBitmap
-    invoke DeleteDC, g_hdcBuf
-    ret
-DestoryCanvas endp
-
 ClearCanvas proc
     LOCAL canvasRect:RECT
     mov canvasRect.left, 0
@@ -354,44 +423,8 @@ CanvasWinProc proc USES ebx esi,
         mov cxClient, edx
         shr eax, 16
         mov cyClient, eax
+        invoke UpdateScrollBarSize, hWnd
         
-        ; ==== Update Vertical Scrollbar ====
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
-        mov scrollbarInfo.nMin, 0
-        mov eax, cyClient
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx
-        mov scrollbarInfo.nPage, eax
-        mov eax, g_canvasHeight
-        mov edx, g_zoom
-        mul edx
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx 
-        mov scrollbarInfo.nMax, eax
-        
-        invoke SetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo, TRUE
-        
-        ; ==== Update Horizontal Scrollbar ====
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
-        mov scrollbarInfo.nMin, 0
-        mov eax, cxClient
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx
-        mov scrollbarInfo.nPage, eax
-        mov eax, g_canvasWidth
-        mov edx, g_zoom
-        mul edx
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx 
-        mov scrollbarInfo.nMax, eax
-        
-        invoke SetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo, TRUE
     .ELSEIF uMsg == WM_VSCROLL
         mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
         mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
