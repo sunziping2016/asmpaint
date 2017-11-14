@@ -4,3 +4,4 @@ Bak/
 *.RES
 *.undo
 !mspaint-rsrc/mspaint.exe
+*.rap

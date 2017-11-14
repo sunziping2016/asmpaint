@@ -48,6 +48,11 @@ include asmpaint.Inc
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
     ;showRegs BYTE "%d",0ah,0; debug
+    ;debug
+    showDraggedFileNum BYTE "Dragged file num: %d", 0ah, 0
+    
+    ;dragged file name
+    draggedFileNameLength BYTE 50
     
     g_toolbarStatus DWORD IDM_PENCIL ;default to IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
@@ -225,6 +230,10 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
         invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
+    
+    .ELSEIF uMsg == WM_HOTKEY
+    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
+
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
@@ -239,6 +248,17 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             mov eax, wParam
             mov g_toolbarStatus, eax
         .ENDIF
+        
+    .ELSEIF uMsg == WM_DROPFILES
+    	invoke DragQueryFile, wParam, 0FFFFFFFFh, NULL, 0
+    	;debug
+    	invoke crt_printf, offset showDraggedFileNum, eax
+    	mov ecx, eax
+    	.WHILE ecx > 0
+    	    ;invoke DragQueryFile, wParam, eax - ecx, offset draggedFileName, draggedFileNameLength
+    		dec ecx
+    	.endw
+    	
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
@@ -512,6 +532,9 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
            hInst, NULL
 
     mov g_hWnd, eax
+    
+    ; ==== Enable drag and drop ====
+    invoke DragAcceptFiles, g_hWnd, TRUE
     
     invoke ShowWindow, g_hWnd, cmdShow
     invoke UpdateWindow, g_hWnd
