@@ -4,51 +4,56 @@
 include asmpaint.Inc
 
 .data
-
-
     className BYTE "AsmPaintClass",0
     canvasClassName BYTE "AsmPaintCanvasClass",0
     appName BYTE "画图",0
    
     toolbarClassName BYTE "ToolbarWindow32",0
    
-    CONTROL_BUTTON_NUM equ 16
     g_tbControlButtons \
-        TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <1, IDM_RECT_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <2, IDM_ERASER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <3, IDM_PAINT_BARREL, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <4, IDM_COLOR_PICKER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <5, IDM_MAGNIFIER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <6, IDM_PENCIL, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <7, IDM_BRASH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <8, IDM_AIRBRUSH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <9, IDM_TEXT, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <10, IDM_STRAIGHT_LINE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <11, IDM_CURVE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <12, IDM_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <13, IDM_POLYGON, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <14, IDM_ELLIPSE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
-        TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, NULL>
+        TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <1, IDM_RECT_SELECTOR, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <2, IDM_ERASER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <3, IDM_PAINT_BARREL, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <4, IDM_COLOR_PICKER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <5, IDM_MAGNIFIER, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <6, IDM_PENCIL, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <7, IDM_BRASH, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <8, IDM_AIRBRUSH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <9, IDM_TEXT, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <10, IDM_STRAIGHT_LINE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <11, IDM_CURVE, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <12, IDM_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <13, IDM_POLYGON, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <14, IDM_ELLIPSE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <8, 0, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_SEP, 0, 0, NULL>
+        TBBUTTON <16, IDM_FOREGROUND_COLOR, TBSTATE_ENABLED, BTNS_AUTOSIZE, 0, 0, NULL>
+        TBBUTTON <17, IDM_BACKGROUND_COLOR, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE, 0, 0, NULL>
+    CONTROL_BUTTON_NUM = ($ - g_tbControlButtons) / sizeof TBBUTTON
 
     openFileDialogName BYTE "打开", 0
     openFileFilterPattern BYTE "位图文件 (*.bmp)", 0, "*.bmp", 0, 0
-    MAX_FILE_NAME_SIZE equ 256  ; should be at least 256 bytes
+    MAX_FILE_NAME_SIZE equ 256
 
     g_canvasWidth DWORD 800
     g_canvasHeight DWORD 600
     g_canvasOffsetX DWORD 0
     g_canvasOffsetY DWORD 0
     g_zoom DWORD 1
-    
+        
     SCROLL_STEP_PIXEL equ 4
     SCROLL_MOVE_STEPS equ 25
-
+    TOOLBAR_WIDTH equ 48
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
     ;showRegs BYTE "%d",0ah,0; debug
     
     g_toolbarStatus DWORD IDM_PENCIL ;default to IDM_PENCIL
+    g_customColors DWORD 16 DUP(0ffffffh)
+    g_foregroundColor DWORD 0
+    g_backgroundColor DWORD 0ffffffh
+    
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -58,7 +63,7 @@ include asmpaint.Inc
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
-    fileName BYTE 256 dup(MAX_FILE_NAME_SIZE)
+    fileName BYTE MAX_FILE_NAME_SIZE dup(?)
     
 .code
 
@@ -67,26 +72,20 @@ include asmpaint.Inc
 CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
     ; Note: canvasRect.left = left pos,  canvasRect.right  = width
     ;       canvasRect.top  = top pos,   canvasRect.bottom = height
-    LOCAL toolbarRect:RECT
     LOCAL hWndRect:RECT
     
-    invoke GetWindowRect, toolbarWnd, addr toolbarRect
     invoke GetClientRect, hWnd, addr hWndRect
     
-    mov esi, canvasRect
-    mov eax, hWndRect.left
-    mov (RECT PTR [esi]).left, eax
+    mov esi, [canvasRect]
     
-    mov eax, toolbarRect.bottom
-    sub eax, toolbarRect.top
-    mov (RECT PTR [esi]).top, eax 
+    mov (RECT PTR [esi]).left, TOOLBAR_WIDTH
+    mov (RECT PTR [esi]).top, 0 
     
     mov eax, hWndRect.right
-    sub eax, (RECT PTR [esi]).left
+    sub eax, TOOLBAR_WIDTH
     mov (RECT PTR [esi]).right, eax
     
     mov eax, hWndRect.bottom
-    sub eax, (RECT PTR [esi]).top
     mov (RECT PTR [esi]).bottom, eax
     
     ret
@@ -101,7 +100,7 @@ OpenOpenFileDialog proc hWnd:HWND
     mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
     mov openFileStruct.lpstrCustomFilter, NULL
     mov openFileStruct.nFilterIndex, 0
-    mov [fileName], 0
+    mov fileName, 0
     mov openFileStruct.lpstrFile, OFFSET fileName
     mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
     mov openFileStruct.lpstrFileTitle, NULL
@@ -109,9 +108,84 @@ OpenOpenFileDialog proc hWnd:HWND
     mov openFileStruct.lpstrInitialDir, NULL
     mov openFileStruct.lpstrTitle, OFFSET openFileDialogName
     mov openFileStruct.Flags, OFN_PATHMUSTEXIST
+    mov openFileStruct.lpstrDefExt, NULL
     invoke GetOpenFileName, addr openFileStruct
     ret
 OpenOpenFileDialog endp
+
+SetCanvasColor proc index:DWORD, color:DWORD
+    ; if index == 0, set `color' as foreground color
+    ;    index == 1, set `color' as background color
+    LOCAL hdcWnd:HDC
+    LOCAL hdc:HDC
+    LOCAL hBmp:HBITMAP
+    LOCAL hBmpMask: HBITMAP
+    LOCAL hBrush:HBRUSH
+    LOCAL rect:RECT
+
+    mov eax, color
+    .IF index == 0
+        mov g_foregroundColor, eax
+    .ELSE
+        mov g_backgroundColor, eax
+    .ENDIF
+    mov eax, index
+    add eax, 16
+    mov index, eax
+    
+    mov rect.left, 0
+    mov rect.top, 0
+    mov rect.right, 16
+    mov rect.bottom, 16
+
+    invoke GetDC, g_hWnd
+    mov hdcWnd, eax
+    
+    invoke CreateCompatibleDC, hdcWnd
+    mov hdc, eax
+    invoke CreateCompatibleBitmap, hdcWnd, 16, 16
+    mov hBmp, eax
+    invoke SelectObject, hdc, hBmp
+    invoke CreateSolidBrush, color
+    mov hBrush, eax
+    invoke FillRect, hdc, addr rect, hBrush
+    invoke DeleteObject, hBrush
+    invoke CreateCompatibleBitmap, hdcWnd, 16, 16
+    mov hBmpMask, eax
+    invoke SelectObject, hdc, hBmpMask
+    invoke CreateSolidBrush, 0
+    mov hBrush, eax
+    invoke FillRect, hdc, addr rect, hBrush
+    invoke DeleteObject, hBrush
+    invoke DeleteDC, hdc
+
+    invoke ImageList_Replace, g_hImageListControl, index, hBmp, hBmpMask
+
+    invoke DeleteObject, hBmp
+    invoke DeleteObject, hBmpMask
+    invoke DeleteDC, hdcWnd
+    
+    invoke InvalidateRect, g_hWndControl, NULL, TRUE
+    ret 
+SetCanvasColor endp
+
+PromptColor proc, index: DWORD
+    LOCAL choose:CHOOSECOLOR
+    mov choose.lStructSize, sizeof CHOOSECOLOR
+    mov eax, g_hWnd
+    mov choose.hwndOwner, eax 
+    .IF index == 0
+        mov eax, g_foregroundColor
+    .ELSE
+        mov eax, g_backgroundColor
+    .ENDIF
+    mov choose.rgbResult, eax
+    mov choose.lpCustColors, offset g_customColors
+    mov choose.Flags, CC_RGBINIT
+    invoke ChooseColor, addr choose
+    invoke SetCanvasColor, index, choose.rgbResult
+    ret
+PromptColor endp
 
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
@@ -122,21 +196,22 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_CREATE
         ; ==== Create Left Control Toolbar ====
         invoke CreateWindowEx, 0, addr toolbarClassName, NULL, \
-            CCS_NODIVIDER or WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
+            CCS_VERT or CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS, 0, 0, 0, 0, \
             hWnd, NULL, g_hInst, NULL
         mov g_hWndControl, eax
-        invoke ImageList_Create, 16, 16, ILC_COLOR16 or ILC_MASK, CONTROL_BUTTON_NUM, 0
+        invoke ImageList_Create, 16, 16, ILC_COLOR16 or ILC_MASK, 18, 0
         mov g_hImageListControl, eax
         invoke LoadBitmap, g_hInst, IDB_CONTROLS
 		mov hBmp, eax
 		invoke ImageList_AddMasked, g_hImageListControl, hBmp, 0ffh
 		invoke DeleteObject, hBmp
-        invoke SendMessage, g_hWndControl, TB_SETIMAGELIST, IDB_CONTROLS, g_hImageListControl
+    	invoke SetCanvasColor, 0, 0
+    	invoke SetCanvasColor, 1, 0ffffffh
+        invoke SendMessage, g_hWndControl, TB_SETIMAGELIST, 0, g_hImageListControl
         invoke SendMessage, g_hWndControl, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
         invoke SendMessage, g_hWndControl, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
         invoke SendMessage, g_hWndControl, TB_ADDBUTTONS, CONTROL_BUTTON_NUM, offset g_tbControlButtons
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
-        
         ; ===== Create Canvas Child Window =====
         invoke CalculateCanvasWindowPosition, hWnd, g_hWndControl, addr canvasWndRect
         invoke CreateWindowEx, 0, addr canvasClassName, NULL, WS_CHILD or WS_HSCROLL or WS_VSCROLL, \
@@ -144,7 +219,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                hWnd, NULL, g_hInst, NULL
         mov g_hWndCanvas, eax
         
-        invoke ShowWindow, g_hWndCanvas, SW_SHOW        
+        invoke ShowWindow, g_hWndCanvas, SW_SHOW
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
         invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
@@ -156,6 +231,10 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke OpenOpenFileDialog, hWnd
             invoke crt_puts, offset fileName
             call DestoryCanvas
+        .ELSEIF wParam == IDM_FOREGROUND_COLOR
+            invoke PromptColor, 0
+        .ELSEIF wParam == IDM_BACKGROUND_COLOR
+            invoke PromptColor, 1
         .ELSE
             mov eax, wParam
             mov g_toolbarStatus, eax
