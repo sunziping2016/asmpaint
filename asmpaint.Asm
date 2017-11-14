@@ -47,17 +47,27 @@ include asmpaint.Inc
     TOOLBAR_WIDTH equ 48
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
-    ;showRegs BYTE "%d",0ah,0; debug
     ;debug
     showDraggedFileNum BYTE "Dragged file num: %d", 0ah, 0
-    
-    ;dragged file name
-    draggedFileNameLength BYTE 50
+    showFileToOpen BYTE "File to open: ", 0
+    showEcx BYTE "Ecx: %d", 0ah, 0
     
     g_toolbarStatus DWORD IDM_PENCIL ;default to IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
     g_foregroundColor DWORD 0
     g_backgroundColor DWORD 0ffffffh
+    jpgSuffix BYTE ".jpg", 0
+    jpegSuffix BYTE ".jpeg", 0
+    pngSuffix BYTE ".png", 0
+    bmpSuffix BYTE ".bmp", 0
+    JPGSuffix BYTE ".JPG", 0
+    JPEGSuffix BYTE ".JPEG", 0
+    PNGSuffix BYTE ".PNG", 0
+    BMPSuffix BYTE ".BMP", 0
+    suffixes DWORD offset jpgSuffix, offset jpegSuffix, offset pngSuffix, offset bmpSuffix, offset JPGSuffix, offset JPEGSuffix, offset PNGSuffix, offset BMPSuffix
+    fileSuffixPtr DWORD 00000000h
+    
+    count DWORD ?
     
 .data?
     g_hInst HINSTANCE ?
@@ -251,13 +261,34 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         
     .ELSEIF uMsg == WM_DROPFILES
     	invoke DragQueryFile, wParam, 0FFFFFFFFh, NULL, 0
-    	;debug
+    	mov count, eax
     	invoke crt_printf, offset showDraggedFileNum, eax
-    	mov ecx, eax
-    	.WHILE ecx > 0
-    	    ;invoke DragQueryFile, wParam, eax - ecx, offset draggedFileName, draggedFileNameLength
-    		dec ecx
-    	.endw
+    	
+    	mov ecx, count
+    	mov ebx, 0
+    Loop_open_files:
+    	mov count, ecx
+    	invoke DragQueryFile, wParam, ebx, offset fileName, MAX_FILE_NAME_SIZE
+    	inc ebx
+    	invoke PathFindExtension, offset fileName
+    	mov fileSuffixPtr, eax
+    	    
+    	mov ecx, LENGTHOF suffixes
+    	mov esi, 0
+    Loop_suffixes:
+    	push ecx
+    	invoke lstrcmp, fileSuffixPtr, suffixes[esi]
+    	.IF eax == 0
+    	    ;open file here
+    	    ;debug
+    	    invoke crt_printf, offset showFileToOpen
+    	    invoke crt_printf, offset fileName
+    	.endif
+    	add esi, 4
+    	pop ecx
+    	loop Loop_suffixes
+    	mov ecx, count
+        loop Loop_open_files
     	
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
