@@ -71,7 +71,8 @@ UpdateScrollBarSize proto
     STATUSBAR_COORDINATES_WIDTH equ 120
     STATUSBAR_ENDING_WIDTH equ 24
 
-    debugWndProcMsg BYTE "%u %u %d",0ah,0
+    debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
+    debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
     debugPrintInt BYTE "%d", 0ah, 0
     
     g_toolbarStatus DWORD IDM_PENCIL ;default to IDM_PENCIL
@@ -546,7 +547,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
         invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
         invoke UpdateCanvasWindowPosition
-        invoke UpdateStatusBarSize        
+        invoke UpdateStatusBarSize
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         mov eax, wParam
@@ -645,11 +646,11 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         .ELSE
             invoke DestroyWindow, hWnd
         .ENDIF
+    .ELSEIF uMsg == WM_ERASEBKGND
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
     .ENDIF
-
     xor eax,eax
     ret
 WndProc endp
@@ -686,6 +687,7 @@ UpdateMousePos proc
     mov g_mouseCanvasY, eax
     mov ecx, g_canvasWidth
     mov edx, g_canvasHeight
+    invoke crt_printf, offset debugPoint, g_mouseCanvasX, g_mouseCanvasY
     .IF g_mouseCanvasX >= 0 && g_mouseCanvasX < ecx && g_mouseCanvasY >= 0 && g_mouseCanvasY < edx
         mov g_mouseInCanvas, 1
     .ELSE
@@ -964,7 +966,7 @@ CanvasTrackMouse proc
     ret
 CanvasTrackMouse endp
 
-UpdataCursor proc
+UpdateCursor proc
     .IF g_mouseInCanvas == 1
         .IF g_toolbarStatus == IDM_PAINT_BARREL
             mov edx, g_hInst
@@ -1002,7 +1004,7 @@ UpdataCursor proc
         invoke SetCursor, eax
     .ENDIF
     ret
-UpdataCursor endp
+UpdateCursor endp
 
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
@@ -1069,14 +1071,14 @@ CanvasWinProc proc USES ebx esi,
         invoke CanvasTrackMouse
         invoke UpdateMousePos
         invoke UpdateStatusBarMouseCoordinate
-        invoke UpdataCursor
+        invoke UpdateCursor
     .ELSEIF uMsg == WM_MOUSELEAVE
         mov g_mouseInCanvas, 0
         mov g_mouseTracking, 0
         invoke UpdateStatusBarMouseCoordinate
-        invoke UpdataCursor
+        invoke UpdateCursor
     .ELSEIF uMsg == WM_SETCURSOR
-        invoke UpdataCursor
+        invoke UpdateCursor
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
