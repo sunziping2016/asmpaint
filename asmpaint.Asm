@@ -41,6 +41,8 @@ include asmpaint.Inc
     confirmCloseDialogName BYTE "»­Í¼", 0
     coordinateFormat BYTE "%d, %d", 0ah, 0
     
+    aboutDialogText BYTE "À±¼¦»ã±à´ó×÷Äõ»ÙÎÒÇà´º¡£¬µôÎÒÍ··¢£¡", 0
+    
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
 
@@ -568,7 +570,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         mov statusBarEdges[0], eax
         invoke SendMessage, g_hWndStatusBar, SB_SETPARTS, 3, addr statusBarEdges
     .ELSEIF uMsg == WM_HOTKEY
-    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
+    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, 0
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
@@ -582,7 +584,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
             invoke PromptColor, 1
-        .ELSEIF wParam == IDM_QUIT
+        .ELSEIF wParam == IDM_EXIT
             invoke SendMessage, hWnd, WM_CLOSE, 0, 0
         .ELSE
             mov eax, wParam
@@ -901,7 +903,6 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     invoke RegisterHotKey, g_hWnd, IDM_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
     invoke RegisterHotKey, g_hWnd, IDM_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
     invoke RegisterHotKey, g_hWnd, IDM_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
-    ;invoke RegisterHotKey, g_hWnd, IDM_QUIT, MOD_ALT or MOD_NOREPEAT, VK_F4
     
     .WHILE TRUE
         invoke GetMessage, ADDR msg, NULL, 0, 0
