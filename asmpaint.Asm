@@ -43,11 +43,14 @@ include asmpaint.Inc
     
     MAX_FILE_NAME_SIZE equ 256
     saveFileDialogName BYTE "Áí´æÎª", 0
-    g_bitmapName BYTE "untitle.bmp", MAX_FILE_NAME_SIZE dup(0)
+    g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(0)
+    defaultSaveAsName BYTE "untitle.bmp", 0
     MAX_ZOOM equ 16
-
-    g_canvasWidth DWORD 800
-    g_canvasHeight DWORD 600
+    
+    DEFAULT_CANVAS_WIDTH equ 800
+    DEFAULT_CANVAS_HEIGHT equ 600
+    g_canvasWidth DWORD DEFAULT_CANVAS_WIDTH
+    g_canvasHeight DWORD DEFAULT_CANVAS_HEIGHT
     g_canvasOffsetX DWORD 0
     g_canvasOffsetY DWORD 0
     g_zoom DWORD 1
@@ -107,6 +110,18 @@ CreateCanvas proc hWnd:HWND
     invoke ReleaseDC, hWnd, hdc
     ret
 CreateCanvas endp
+
+ClearCanvas proc
+    LOCAL canvasRect:RECT
+    mov canvasRect.left, 0
+    mov canvasRect.top, 0
+    mov eax, g_canvasWidth
+    mov canvasRect.right, eax
+    mov eax, g_canvasHeight
+    mov canvasRect.bottom, eax
+    invoke FillRect, g_hdcBuf, addr canvasRect, WHITE_BRUSH
+    ret
+ClearCanvas endp
 
 DestoryCanvas proc
     invoke DeleteObject, g_hdcBitmap
@@ -314,7 +329,7 @@ CreateBitmapInfoStruct proc USES ebx esi
     mov ebx, cClrBits
     mul ebx
     add eax, 31
-    and eax, 0ffffffe0h ;0ffffffe0: ~31
+    and eax, 0ffffffe0h ;0ffffffe0h: ~31
     mov ebx, 8
     xor edx, edx
     div ebx
@@ -375,13 +390,19 @@ SaveBitmapFile proc USES ebx
     invoke CloseHandle, hf
     invoke GlobalFree, lpBits
     invoke LocalFree, pbi
+    mov g_isModified, 0
     ret
 SaveBitmapFile endp
 
-SaveAsBitmap proc
+; return 1 if success, NULL if user cancels
+OpenSaveBitmapDialog proc
     LOCAL openFileStruct:OPENFILENAME
     LOCAL filename[MAX_FILE_NAME_SIZE]:BYTE
-    invoke crt_strcpy, addr filename, offset g_bitmapName
+    .IF g_bitmapName == 0
+        invoke crt_strcpy, addr filename, offset defaultSaveAsName
+    .ELSE
+        invoke crt_strcpy, addr filename, offset g_bitmapName
+    .ENDIF
     mov openFileStruct.lStructSize, SIZEOF openFileStruct
     mov eax, g_hWnd
     mov openFileStruct.hwndOwner, eax
@@ -399,13 +420,12 @@ SaveAsBitmap proc
     mov openFileStruct.Flags, OFN_PATHMUSTEXIST
     mov openFileStruct.lpstrDefExt, NULL
     invoke GetSaveFileName, addr openFileStruct
-    .IF eax == 0
-        ret
+    .IF eax != NULL
+        invoke crt_strcpy, offset g_bitmapName, addr filename
+        mov eax, 1
     .endif
-    invoke crt_strcpy, offset g_bitmapName, addr filename
-    call SaveBitmapFile
     ret
-SaveAsBitmap endp
+OpenSaveBitmapDialog endp
 
 SetCanvasColor proc index:DWORD, color:DWORD
     ; if index == 0, set `color' as foreground color
@@ -480,6 +500,27 @@ PromptColor proc, index: DWORD
     invoke SetCanvasColor, index, choose.rgbResult
     ret
 PromptColor endp
+
+; return 0: user cancels operation, 1: user has decided whether to save the modified
+ConfirmSaveModify proc
+    LOCAL return:DWORD
+    invoke MessageBox, g_hWnd, offset confirmCloseDialogText, offset confirmCloseDialogName, MB_YESNOCANCEL or MB_ICONEXCLAMATION
+    .IF eax == IDYES
+        call OpenSaveBitmapDialog
+        .IF eax != NULL
+            call SaveBitmapFile
+            mov return, 1
+        .ELSE
+            mov return, 0
+        .ENDIF
+    .ELSEIF eax == IDNO
+        mov return, 1
+    .ELSE
+        mov return, 0
+    .ENDIF
+    mov eax, return
+    ret
+ConfirmSaveModify endp
 
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
@@ -570,12 +611,47 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
-            invoke OpenOpenBitmapDialog, hWnd, addr filenameTemp
-            .IF eax != 0
+            .IF g_isModified == 1
+                call ConfirmSaveModify
+                .IF eax == 0
+                    jmp DontOpenFile
+                .endif
+            .ENDIF
+            invoke OpenOpenBitmapDialog, g_hWnd, addr filenameTemp
+            .IF eax != NULL
                 invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
             .endif
+            DontOpenFile:
+        .ELSEIF wParam == IDM_NEW
+            .IF g_isModified == 1
+                call ConfirmSaveModify
+                .IF eax == 0
+                    jmp DontNewCanvas
+                .endif
+            .ENDIF
+            call DestoryCanvas
+            mov g_canvasWidth, DEFAULT_CANVAS_WIDTH
+            mov g_canvasHeight, DEFAULT_CANVAS_HEIGHT
+            mov g_isModified, 0
+            mov g_bitmapName, 0
+            invoke CreateCanvas, g_hWndCanvas
+            invoke ClearCanvas
+            invoke UpdateScrollBarSize, g_hWndCanvas
+            invoke InvalidateRect, g_hWndCanvas, NULL, TRUE
+            DontNewCanvas:
+        .ELSEIF wParam == IDM_SAVE
+            .IF g_isModified != 0
+                .IF g_bitmapName == 0
+                    invoke SendMessage, g_hWndControl, WM_COMMAND, IDM_SAVEAS, lParam
+                .ELSE
+                    call SaveBitmapFile
+                .ENDIF
+            .ENDIF
         .ELSEIF wParam == IDM_SAVEAS
-            call SaveAsBitmap
+            call OpenSaveBitmapDialog
+            .IF eax != NULL
+                call SaveBitmapFile
+            .endif
         .ELSEIF wParam == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
@@ -593,12 +669,9 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     	    invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
     	.ENDIF 
     .ELSEIF uMsg == WM_CLOSE
-        .IF g_isModified != 0
-            invoke MessageBox, hWnd, offset confirmCloseDialogText, offset confirmCloseDialogName, MB_YESNOCANCEL or MB_ICONEXCLAMATION
-            .IF eax == IDYES
-                ; TODO: Save changes
-                invoke DestroyWindow, hWnd
-            .ELSEIF eax == IDNO
+        .IF g_isModified == 1
+            call ConfirmSaveModify
+            .IF eax != 0
                 invoke DestroyWindow, hWnd
             .ENDIF
         .ELSE
@@ -638,18 +711,6 @@ CalculateOffset proc hWnd:HWND
     mov g_canvasOffsetX, eax
     ret
 CalculateOffset endp
-
-ClearCanvas proc
-    LOCAL canvasRect:RECT
-    mov canvasRect.left, 0
-    mov canvasRect.top, 0
-    mov eax, g_canvasWidth
-    mov canvasRect.right, eax
-    mov eax, g_canvasHeight
-    mov canvasRect.bottom, eax
-    invoke FillRect, g_hdcBuf, addr canvasRect, WHITE_BRUSH
-    ret
-ClearCanvas endp
 
 UpdateScrollPosition proc USES ebx, index:DWORD, mode:DWORD, value:DWORD
     ; mode: 0 value, 1 delta, 2 trackPos
@@ -780,6 +841,10 @@ CanvasWinProc proc USES ebx esi,
         
         invoke BeginPaint, hWnd, addr ps
         mov hdc, eax
+        
+        ;invoke Rectangle, g_hdcBuf, 10, 10, 100, 300
+        ;mov g_isModified, 1
+        
         mov eax, g_canvasWidth
         sub eax, g_canvasOffsetX
         mov canvasWidthMinusOffsetX, eax
