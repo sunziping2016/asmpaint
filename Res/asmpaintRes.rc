@@ -7,6 +7,8 @@
 #define IDC_PICK						102
 #define IDC_ZOOM						103
 #define IDC_PEN							104
+#define IDC_SPRAY						105
+#define IDC_BRUSH						106
 IDB_CONTROLS			BITMAP    DISCARDABLE "Res/controls.bmp"
 ID_MANIFEST				MANIFEST  DISCARDABLE "Res/manifests.xml"
 IDI_APP					ICON      DISCARDABLE "Res/app.ico"
@@ -15,3 +17,5 @@ IDC_BUCKET				CURSOR    DISCARDABLE "Res/bucket.cur"
 IDC_PICK				CURSOR    DISCARDABLE "Res/pick.cur"
 IDC_ZOOM				CURSOR    DISCARDABLE "Res/zoom.cur"
 IDC_PEN					CURSOR    DISCARDABLE "Res/pen.cur"
+IDC_SPRAY				CURSOR    DISCARDABLE "Res/spray.cur"
+IDC_BRUSH				CURSOR    DISCARDABLE "Res/brush.cur"
