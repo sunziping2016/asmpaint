@@ -35,6 +35,8 @@ include asmpaint.Inc
     openFileDialogName BYTE "打开", 0
     openFileFilterPattern BYTE "位图文件 (*.bmp)", 0, "*.bmp", 0, 0
     MAX_FILE_NAME_SIZE equ 256
+    saveFileDialogName BYTE "另存为", 0
+    g_bitmapName BYTE "untitle.bmp", MAX_FILE_NAME_SIZE dup(0)
 
     g_canvasWidth DWORD 800
     g_canvasHeight DWORD 600
@@ -68,7 +70,6 @@ include asmpaint.Inc
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
-    g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(?)
     
 .code
 
@@ -78,7 +79,7 @@ CreateCanvas proc hWnd:HWND
     mov hdc, eax
     invoke CreateCompatibleDC, hdc
     mov g_hdcBuf, eax
-    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasWidth
+    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
     mov g_hdcBitmap, eax
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
     invoke ReleaseDC, hWnd, hdc
@@ -159,17 +160,22 @@ CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasR
     ret
 CalculateCanvasWindowPosition endp
 
-OpenOpenFileDialog proc hWnd:HWND
+OpenBitmap proc
     LOCAL openFileStruct:OPENFILENAME
+    LOCAL filename[MAX_FILE_NAME_SIZE]:BYTE
+    LOCAL bm:BITMAP
+    LOCAL bitmapHandle:HANDLE
+    ; ==== Open dialog ====
     mov openFileStruct.lStructSize, SIZEOF openFileStruct
-    mov eax, hWnd
+    mov eax, g_hWnd
     mov openFileStruct.hwndOwner, eax
     mov openFileStruct.hInstance, NULL
     mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
     mov openFileStruct.lpstrCustomFilter, NULL
     mov openFileStruct.nFilterIndex, 0
-    mov g_bitmapName, 0
-    mov openFileStruct.lpstrFile, OFFSET g_bitmapName
+    mov BYTE PTR filename, 0
+    lea eax, filename
+    mov openFileStruct.lpstrFile, eax
     mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
     mov openFileStruct.lpstrFileTitle, NULL
     mov openFileStruct.nMaxFileTitle, 0
@@ -178,33 +184,181 @@ OpenOpenFileDialog proc hWnd:HWND
     mov openFileStruct.Flags, OFN_PATHMUSTEXIST
     mov openFileStruct.lpstrDefExt, NULL
     invoke GetOpenFileName, addr openFileStruct
-    ret
-OpenOpenFileDialog endp
-
-LoadBitmapFromFile proc hWnd:HWND
-    LOCAL bm:BITMAP
-    LOCAL bitmapHandle:HANDLE
-    invoke LoadImage, NULL, OFFSET g_bitmapName, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE
+    
+    ; ==== Load Bitmap ====
+    invoke LoadImage, NULL, addr filename, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE
     mov bitmapHandle, eax
     .IF eax == NULL
         ret
     .endif
+    invoke crt_strcpy, offset g_bitmapName, addr filename
     invoke GetObject, bitmapHandle, SIZEOF bm, addr bm
     mov eax, bm.bmWidth
     mov g_canvasWidth, eax
     mov eax, bm.bmHeight
     mov g_canvasHeight, eax
     call DestoryCanvas
-    invoke GetDC, hWnd
+    invoke GetDC, g_hWndCanvas
     invoke CreateCompatibleDC, eax
     mov g_hdcBuf, eax
     mov eax, bitmapHandle
     mov g_hdcBitmap, eax
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
-    invoke UpdateScrollBarSize, hWnd
-    invoke InvalidateRect, hWnd, NULL, TRUE
+    invoke UpdateScrollBarSize, g_hWndCanvas
+    invoke InvalidateRect, g_hWndCanvas, NULL, TRUE
     ret
-LoadBitmapFromFile endp
+OpenBitmap endp
+
+CreateBitmapInfoStruct proc USES ebx esi
+    LOCAL pbmi:PTR ; Bitmap info pointer
+    LOCAL cClrBits:DWORD
+    LOCAL bmp:BITMAP
+    
+    invoke GetObject, g_hdcBitmap, SIZEOF bmp, addr bmp 
+    movzx eax, bmp.bmPlanes
+    movzx ebx, bmp.bmBitsPixel
+    mul ebx
+    mov cClrBits, eax
+    .IF cClrBits == 1
+        mov cClrBits, 1
+    .ELSEIF cClrBits <= 4
+        mov cClrBits, 4
+    .ELSEIF cClrBits <= 8
+        mov cClrBits, 8
+    .ELSEIF cClrBits <= 16
+        mov cClrBits, 16
+    .ELSEIF cClrBits <= 24
+        mov cClrBits, 24
+    .ELSE
+        mov cClrBits, 32
+    .ENDIF
+    .IF cClrBits < 24
+        mov eax, 1
+        mov ecx, cClrBits
+        shl eax, cl
+        mov ebx, SIZEOF RGBQUAD
+        mul ebx
+        add eax, SIZEOF BITMAPINFOHEADER
+        invoke LocalAlloc, LMEM_FIXED or LMEM_ZEROINIT, eax
+        mov pbmi, eax
+    .ELSE
+        invoke LocalAlloc, LMEM_FIXED or LMEM_ZEROINIT, SIZEOF BITMAPINFOHEADER
+        mov pbmi, eax
+    .endif
+    mov esi, pbmi
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biSize, sizeof BITMAPINFOHEADER
+    mov eax, bmp.bmWidth
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biWidth, eax
+    mov eax, bmp.bmHeight
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biHeight, eax
+    mov ax, bmp.bmPlanes
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biPlanes, ax
+    mov ax, bmp.bmBitsPixel
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biBitCount, ax
+    .IF cClrBits < 24
+        mov eax, 1
+        mov ecx, cClrBits
+        shl eax, cl
+        mov (BITMAPINFO PTR [esi]).bmiHeader.biClrUsed,  eax
+    .endif
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biCompression, BI_RGB
+    mov eax, (BITMAPINFO PTR [esi]).bmiHeader.biWidth
+    mov ebx, cClrBits
+    mul ebx
+    add eax, 31
+    and eax, 0ffffffe0h ;0ffffffe0: ~31
+    mov ebx, 8
+    xor edx, edx
+    div ebx
+    mov ebx, (BITMAPINFO PTR [esi]).bmiHeader.biHeight
+    mul ebx
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biSizeImage, eax
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biClrImportant, 0
+    mov eax, pbmi
+    ret
+CreateBitmapInfoStruct endp
+
+SaveBitmapFile proc USES ebx
+    LOCAL pbi:PTR
+    LOCAL hf:HANDLE
+    LOCAL hdr:BITMAPFILEHEADER
+    LOCAL pbih:PTR
+    LOCAL lpBits:LPBYTE
+    LOCAL dwTotal:DWORD
+    LOCAL cb:DWORD
+    LOCAL hp:PTR
+    LOCAL dwTmp:DWORD
+    
+    call CreateBitmapInfoStruct
+    mov pbi, eax
+    mov pbih, eax
+    mov esi, pbih
+    invoke GlobalAlloc, GMEM_FIXED, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+    mov lpBits, eax
+    invoke GetDIBits, g_hdcBuf, g_hdcBitmap, 0, (BITMAPINFOHEADER PTR [esi]).biHeight, lpBits, \
+           pbi, DIB_RGB_COLORS
+    invoke CreateFile, offset g_bitmapName, GENERIC_READ or GENERIC_WRITE, 0, NULL, \
+           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+    mov hf, eax
+    mov hdr.bfType, 4d42h
+    mov eax, (BITMAPINFOHEADER PTR [esi]).biClrUsed
+    mov ebx, SIZEOF RGBQUAD
+    mul ebx
+    add eax, SIZEOF BITMAPFILEHEADER
+    add eax, (BITMAPINFOHEADER PTR [esi]).biSize
+    mov hdr.bfOffBits, eax
+    add eax, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+    mov hdr.bfSize, eax
+    mov hdr.bfReserved1, 0
+    mov hdr.bfReserved2, 0
+    invoke WriteFile, hf, addr hdr, SIZEOF BITMAPFILEHEADER, addr dwTmp, NULL
+    mov eax, (BITMAPINFOHEADER PTR [esi]).biClrUsed
+    mov ebx, SIZEOF RGBQUAD
+    mul ebx
+    add eax, SIZEOF BITMAPINFOHEADER
+    mov ebx, eax ; Just make masm happy
+    invoke WriteFile, hf, pbih, ebx, addr dwTmp, NULL
+    mov eax, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+    mov cb, eax
+    mov eax, dwTotal
+    mov eax, lpBits
+    mov hp, eax
+    invoke WriteFile, hf, hp, cb, addr dwTmp, NULL
+    invoke CloseHandle, hf
+    invoke GlobalFree, lpBits
+    invoke LocalFree, pbi
+    ret
+SaveBitmapFile endp
+
+SaveAsBitmap proc
+    LOCAL openFileStruct:OPENFILENAME
+    LOCAL filename[MAX_FILE_NAME_SIZE]:BYTE
+    invoke crt_strcpy, addr filename, offset g_bitmapName
+    mov openFileStruct.lStructSize, SIZEOF openFileStruct
+    mov eax, g_hWnd
+    mov openFileStruct.hwndOwner, eax
+    mov openFileStruct.hInstance, NULL
+    mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
+    mov openFileStruct.lpstrCustomFilter, NULL
+    mov openFileStruct.nFilterIndex, 0
+    invoke crt_puts, offset g_bitmapName
+    lea eax, filename
+    mov openFileStruct.lpstrFile, eax
+    mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
+    mov openFileStruct.lpstrFileTitle, NULL
+    mov openFileStruct.nMaxFileTitle, 0
+    mov openFileStruct.lpstrInitialDir, NULL
+    mov openFileStruct.lpstrTitle, OFFSET saveFileDialogName
+    mov openFileStruct.Flags, OFN_PATHMUSTEXIST
+    mov openFileStruct.lpstrDefExt, NULL
+    invoke GetSaveFileName, addr openFileStruct
+    .IF filename == 0
+        ret
+    .endif
+    invoke crt_strcpy, offset g_bitmapName, addr filename
+    call SaveBitmapFile
+    ret
+SaveAsBitmap endp
 
 SetCanvasColor proc index:DWORD, color:DWORD
     ; if index == 0, set `color' as foreground color
@@ -325,11 +479,9 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
-            invoke OpenOpenFileDialog, hWnd
-            .IF g_bitmapName != 0
-                invoke crt_puts, offset g_bitmapName
-                invoke LoadBitmapFromFile, g_hWndCanvas
-            .ENDIF
+            call OpenBitmap
+        .ELSEIF wParam == IDM_SAVEAS
+            call SaveAsBitmap
         .ELSEIF wParam == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
@@ -357,7 +509,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     xor eax,eax
     ret
 WndProc endp
-
 
 CalculateOffset proc hWnd:HWND
     LOCAL scrollbarInfo:SCROLLINFO
@@ -436,7 +587,6 @@ CanvasWinProc proc USES ebx esi,
         mov eax, esi
         movzx edx, ax
         mov scrollBarMsgPara, edx
-        ;invoke crt_printf, offset debugPrintInt, edx
         .IF scrollBarMsgPara == SB_LINEUP
             sub scrollbarInfo.nPos, SCROLL_MOVE_STEPS
         .ELSEIF scrollBarMsgPara == SB_LINEDOWN
@@ -485,13 +635,6 @@ CanvasWinProc proc USES ebx esi,
         
         invoke BeginPaint, hWnd, addr ps
         mov hdc, eax
-        
-        invoke MoveToEx, g_hdcBuf, 0, 0, NULL
-        invoke LineTo, g_hdcBuf, 900, 900
-        invoke Rectangle, g_hdcBuf, 20, 20, 100, 100
-        invoke MoveToEx, g_hdcBuf, 10, 10, NULL
-        invoke LineTo, g_hdcBuf, 10, 100
-        
         mov eax, g_canvasWidth
         sub eax, g_canvasOffsetX
         mov canvasWidthMinusOffsetX, eax
