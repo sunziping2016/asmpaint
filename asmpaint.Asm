@@ -84,6 +84,15 @@ UpdateScrollBarSize proto
     g_mouseClientY SDWORD 0
     g_mouseInCanvas DWORD 0
     g_mouseTracking DWORD 0
+    
+    FILL_DEFAULT equ 0
+    FILL_WITHOUT_BORDER equ 1
+    FILL_WITHOUT_FILL equ 2
+    g_fillType DWORD FILL_WITHOUT_BORDER
+    g_penWidth DWORD 10
+    
+    g_pen HPEN NULL
+    g_brush HBRUSH NULL
 
 .data?
     g_hInst HINSTANCE ?
@@ -634,7 +643,6 @@ ClientToCanvasY proc pos:DWORD
     ret
 ClientToCanvasY endp
 
- 
 UpdateMousePos proc
     LOCAL point:POINT
     invoke GetCursorPos, addr point
@@ -796,6 +804,55 @@ UpdateZoom proc mode:DWORD, value:DWORD
     ret
 UpdateZoom endp
 
+SetPen proc hdc:HDC
+    invoke CreatePen, PS_SOLID, g_penWidth, g_foregroundColor
+    mov g_pen, eax
+    invoke SelectObject, hdc, eax
+    ret
+SetPen endp
+
+SetBrush proc hdc:HDC
+    .IF g_fillType == FILL_WITHOUT_BORDER
+        invoke CreatePen, PS_NULL, g_penWidth, g_foregroundColor
+        mov g_pen, eax
+    .ELSE
+        invoke CreatePen, PS_SOLID, g_penWidth, g_foregroundColor
+        mov g_pen, eax
+    .ENDIF
+    
+    .IF g_fillType == FILL_WITHOUT_FILL
+        invoke crt_printf, offset debugPrintInt, 22222
+        invoke GetStockObject, NULL_BRUSH
+        mov g_brush, eax
+    .ELSE
+        invoke CreateSolidBrush, g_backgroundColor
+        mov g_brush, eax
+    .ENDIF
+    invoke SelectObject, hdc, g_pen
+    invoke SelectObject, hdc, g_brush
+    ret
+SetBrush endp
+
+DeletePen proc
+    .IF g_pen != NULL
+        invoke DeleteObject, g_pen
+        mov g_pen, NULL
+    .endif
+    ret
+DeletePen endp
+
+DeleteBrush proc
+    .IF g_pen != NULL
+        invoke DeleteObject, g_pen
+        mov g_pen, NULL
+    .endif
+    .IF g_brush != NULL
+        invoke DeleteObject, g_brush
+        mov g_brush, NULL
+    .endif
+    ret
+DeleteBrush endp
+
 Render proc hWnd:HWND
     LOCAL hdc:HDC
     LOCAL hdcBuffer:HDC
@@ -844,6 +901,13 @@ Render proc hWnd:HWND
     mov ebx, g_zoom
     mul ebx
     mov heightAfterZoom, eax
+    
+    
+    ;invoke SetBrush, g_hdcBuf
+    ;invoke Rectangle, g_hdcBuf, 10, 10, 100, 100
+    ;invoke Rectangle, g_hdcBuf, 50, 50, 200, 200
+    ;invoke DeleteBrush
+    
     invoke StretchBlt, hdcBuffer, CANVAS_MARGIN, CANVAS_MARGIN, widthAfterZoom, heightAfterZoom, \
            g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, canvasWidthMinusOffsetX, canvasHeightMinusOffsetY, \
            SRCCOPY
@@ -869,8 +933,7 @@ CanvasTrackMouse proc
         mov g_mouseTracking, 1
     .ENDIF
     ret
-CanvasTrackMouse endp 
-
+CanvasTrackMouse endp
 
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
