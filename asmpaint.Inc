@@ -6,6 +6,7 @@ include comctl32.inc
 include comdlg32.inc
 include msvcrt.inc
 include shell32.inc
+include shlwapi.inc
 
 includelib user32.lib
 includelib kernel32.lib
@@ -14,16 +15,19 @@ includelib comctl32.lib
 includelib comdlg32.lib
 includelib msvcrt.lib
 includelib shell32.lib
+includelib shlwapi.lib
 
 IDB_CONTROLS equ 100
 
 IDR_MENU equ 10000
 
-IDM_FILE   equ 10001
-IDM_NEW    equ 10002
-IDM_OPEN   equ 10003
-IDM_SAVE   equ 10004
+IDM_FILE equ 10001
+IDM_NEW  equ 10002
+IDM_OPEN equ 10003
+IDM_SAVE equ 10004
 IDM_SAVEAS equ 10005
+IDM_QUIT equ 10006
+
 IDM_FREE_SELECTOR equ 10010
 IDM_RECT_SELECTOR equ 10011
 IDM_ERASER equ 10012
@@ -44,9 +48,6 @@ IDM_ROUNDED_RECTANGLE equ 10025
 IDM_FOREGROUND_COLOR equ 10026
 IDM_BACKGROUND_COLOR equ 10027
 
-IDHK_NEW equ 10030
-IDHK_OPEN equ 10031
-IDHK_SAVE equ 10032
-IDHK_QUIT equ 10033
-
 IDI_APP equ 1
+
+ID_STATUS_BAR equ 0

@@ -9,8 +9,10 @@ include asmpaint.Inc
     appName BYTE "画图",0
    
     toolbarClassName BYTE "ToolbarWindow32",0
+    statusBarClassName BYTE "msctls_statusbar32", 0
    
     g_tbControlButtons \
+        TBBUTTON <8, 0, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_SEP, 0, 0, NULL>
         TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <1, IDM_RECT_SELECTOR, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <2, IDM_ERASER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
@@ -34,9 +36,15 @@ include asmpaint.Inc
 
     openFileDialogName BYTE "打开", 0
     openFileFilterPattern BYTE "位图文件 (*.bmp)", 0, "*.bmp", 0, 0
+    
+    confirmCloseDialogText BYTE "将更改保存到文件吗？", 0
+    confirmCloseDialogName BYTE "画图", 0
+    coordinateFormat BYTE "%d, %d", 0ah, 0
+    
     MAX_FILE_NAME_SIZE equ 256
     saveFileDialogName BYTE "另存为", 0
     g_bitmapName BYTE "untitle.bmp", MAX_FILE_NAME_SIZE dup(0)
+    MAX_ZOOM equ 16
 
     g_canvasWidth DWORD 800
     g_canvasHeight DWORD 600
@@ -45,21 +53,32 @@ include asmpaint.Inc
     g_zoom DWORD 1
         
     SCROLL_STEP_PIXEL equ 4
-    SCROLL_MOVE_STEPS equ 25
+    SCROLL_LINE_STEPS equ 25
+    SCROLL_PAGE_STEPS equ 25
     TOOLBAR_WIDTH equ 48
+    CANVAS_MARGIN equ 5
+
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
-    ;showRegs BYTE "%d",0ah,0; debug
     ;debug
     showDraggedFileNum BYTE "Dragged file num: %d", 0ah, 0
-    
-    ;dragged file name
-    draggedFileNameLength BYTE 50
+    showFileToOpen BYTE "File to open: ", 0
+    showEcx BYTE "Ecx: %d", 0ah, 0
     
     g_toolbarStatus DWORD IDM_PENCIL ;default to IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
-    g_foregroundColor DWORD 0
-    g_backgroundColor DWORD 0ffffffh
+    g_isModified DWORD 0
+
+    ;jpgSuffix BYTE ".jpg", 0
+    ;jpegSuffix BYTE ".jpeg", 0
+    ;pngSuffix BYTE ".png", 0
+    ;bmpSuffix BYTE ".bmp", 0
+    ;JPGSuffix BYTE ".JPG", 0
+    ;JPEGSuffix BYTE ".JPEG", 0
+    ;PNGSuffix BYTE ".PNG", 0
+    BMPSuffix BYTE ".BMP", 0
+    suffixes DWORD offset BMPSuffix;jpgSuffix, offset jpegSuffix, offset pngSuffix, offset bmpSuffix, offset JPGSuffix, offset JPEGSuffix, offset PNGSuffix, offset BMPSuffix
+    fileSuffixPtr DWORD 00000000h
     
 .data?
     g_hInst HINSTANCE ?
@@ -67,10 +86,13 @@ include asmpaint.Inc
     g_hWnd HWND ?
     g_hWndControl HWND ?
     g_hWndCanvas HWND ?
+    g_hWndStatusBar HWND ?
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
     
+    g_foregroundColor DWORD ?
+    g_backgroundColor DWORD ?
 .code
 
 CreateCanvas proc hWnd:HWND
@@ -100,41 +122,57 @@ UpdateScrollBarSize proc USES ebx,
     invoke GetClientRect, hWnd, addr clientRect
     
     ; ==== Update Vertical Scrollbar ====
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
-        mov scrollbarInfo.nMin, 0
-        mov eax, clientRect.bottom
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx
-        mov scrollbarInfo.nPage, eax
-        mov eax, g_canvasHeight
-        mov edx, g_zoom
-        mul edx
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx 
-        mov scrollbarInfo.nMax, eax
-        invoke SetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo, TRUE
-        
-        ; ==== Update Horizontal Scrollbar ====
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
-        mov scrollbarInfo.nMin, 0
-        mov eax, clientRect.right
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx
-        mov scrollbarInfo.nPage, eax
-        mov eax, g_canvasWidth
-        mov edx, g_zoom
-        mul edx
-        mov ebx, SCROLL_STEP_PIXEL
-        xor edx, edx
-        div ebx 
-        mov scrollbarInfo.nMax, eax
-        invoke SetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo, TRUE
-        
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
+    mov scrollbarInfo.nMin, 0
+    mov eax, clientRect.bottom
+    mov ebx, SCROLL_STEP_PIXEL
+    xor edx, edx
+    div ebx
+    mov scrollbarInfo.nPage, eax
+    mov eax, g_canvasHeight
+    mov edx, g_zoom
+    mul edx
+    mov ebx, SCROLL_STEP_PIXEL
+    xor edx, edx
+    div ebx 
+    mov scrollbarInfo.nMax, eax
+    invoke SetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo, TRUE
+    mov scrollbarInfo.fMask, SIF_POS
+    invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov edx, SCROLL_STEP_PIXEL
+    mul edx
+    xor edx, edx
+    div g_zoom
+    mov g_canvasOffsetY, eax
+
+    ; ==== Update Horizontal Scrollbar ====
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE
+    mov scrollbarInfo.nMin, 0
+    mov eax, clientRect.right
+    mov ebx, SCROLL_STEP_PIXEL
+    xor edx, edx
+    div ebx
+    mov scrollbarInfo.nPage, eax
+    mov eax, g_canvasWidth
+    mov edx, g_zoom
+    mul edx
+    mov ebx, SCROLL_STEP_PIXEL
+    xor edx, edx
+    div ebx 
+    mov scrollbarInfo.nMax, eax
+    invoke SetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo, TRUE
+    mov scrollbarInfo.fMask, SIF_POS
+    invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov edx, SCROLL_STEP_PIXEL
+    mul edx
+    xor edx, edx
+    div g_zoom
+    mov g_canvasOffsetX, eax
+ 
     ret
 UpdateScrollBarSize endp
 
@@ -142,8 +180,10 @@ CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasR
     ; Note: canvasRect.left = left pos,  canvasRect.right  = width
     ;       canvasRect.top  = top pos,   canvasRect.bottom = height
     LOCAL hWndRect:RECT
+    LOCAL rectStatusBar:RECT
     
     invoke GetClientRect, hWnd, addr hWndRect
+    invoke GetWindowRect, g_hWndStatusBar, addr rectStatusBar
     
     mov esi, [canvasRect]
     
@@ -154,7 +194,11 @@ CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasR
     sub eax, TOOLBAR_WIDTH
     mov (RECT PTR [esi]).right, eax
     
+    
     mov eax, hWndRect.bottom
+    mov edx, rectStatusBar.bottom
+    sub edx, rectStatusBar.top
+    sub eax, edx
     mov (RECT PTR [esi]).bottom, eax
     
     ret
@@ -441,7 +485,36 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
     LOCAL filenameTemp[MAX_FILE_NAME_SIZE]:BYTE
+    LOCAL count:DWORD
+    LOCAL cursorPos:POINT
+    LOCAL cursorPosMsg[100]:BYTE
+    LOCAL canvasRect:RECT
+    LOCAL relativeCursorPos:POINT
+    LOCAL statusBarEdges[3]:DWORD
+    LOCAL clientRect:RECT
     
+    .IF uMsg != WM_CREATE
+    	invoke GetCursorPos, addr cursorPos
+    	invoke GetWindowRect, g_hWndCanvas, addr canvasRect
+    	mov eax, cursorPos.x
+    	sub eax, canvasRect.left
+    	mov relativeCursorPos.x, eax
+    	mov eax, cursorPos.y
+    	sub eax, canvasRect.top
+    	mov relativeCursorPos.y, eax
+    	
+    	;problems remain: can't get paper's rect
+    	mov eax, canvasRect.right
+    	mov ebx, canvasRect.bottom
+    	.IF relativeCursorPos.x <= 10000000h && cursorPos.x <= eax && relativeCursorPos.y <= 10000000h && cursorPos.y <= ebx
+    		invoke wsprintf, addr cursorPosMsg, offset coordinateFormat, relativeCursorPos.x, relativeCursorPos.y
+    		;debug
+    		;invoke crt_printf, addr cursorPosMsg
+    		invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 00000002h, addr cursorPosMsg
+        .ELSE
+        	invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 00000002h, NULL
+    	.endif
+    .endif
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
     .ELSEIF uMsg == WM_CREATE
@@ -471,15 +544,29 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         mov g_hWndCanvas, eax
         
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
+        ; ===== Create Coordinate status bar =====
+        invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
+            hWnd, NULL, g_hInst, NULL
+        mov g_hWndStatusBar, eax
+        ;calculate right edges of each part of status bar
+        invoke GetClientRect, hWnd, addr clientRect
+        mov eax, clientRect.right ;width
+        mov statusBarEdges[8], eax
+        mov ebx, eax
+        shr ebx, 2
+        sub eax, ebx
+        mov statusBarEdges[4], eax
+        sub eax, ebx
+        mov statusBarEdges[0], eax
+        invoke SendMessage, g_hWndStatusBar, SB_SETPARTS, 3, addr statusBarEdges
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
         invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
         invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
-    
+        invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
     .ELSEIF uMsg == WM_HOTKEY
     	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
-
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
@@ -493,21 +580,30 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
             invoke PromptColor, 1
+        .ELSEIF wParam == IDM_QUIT
+            invoke SendMessage, hWnd, WM_CLOSE, 0, 0
         .ELSE
             mov eax, wParam
             mov g_toolbarStatus, eax
         .ENDIF
         
     .ELSEIF uMsg == WM_DROPFILES
-    	invoke DragQueryFile, wParam, 0FFFFFFFFh, NULL, 0
-    	;debug
-    	invoke crt_printf, offset showDraggedFileNum, eax
-    	mov ecx, eax
-    	.WHILE ecx > 0
-    	    ;invoke DragQueryFile, wParam, eax - ecx, offset draggedFileName, draggedFileNameLength
-    		dec ecx
-    	.endw
-    	
+    	invoke DragQueryFile, wParam, 0, addr filenameTemp, MAX_FILE_NAME_SIZE
+    	.IF eax != 0
+    	    invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
+    	.ENDIF 
+    .ELSEIF uMsg == WM_CLOSE
+        .IF g_isModified != 0
+            invoke MessageBox, hWnd, offset confirmCloseDialogText, offset confirmCloseDialogName, MB_YESNOCANCEL or MB_ICONEXCLAMATION
+            .IF eax == IDYES
+                ; TODO: Save changes
+                invoke DestroyWindow, hWnd
+            .ELSEIF eax == IDNO
+                invoke DestroyWindow, hWnd
+            .ENDIF
+        .ELSE
+            invoke DestroyWindow, hWnd
+        .ENDIF
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
@@ -542,7 +638,7 @@ CalculateOffset proc hWnd:HWND
     mov g_canvasOffsetX, eax
     ret
 CalculateOffset endp
-        
+
 ClearCanvas proc
     LOCAL canvasRect:RECT
     mov canvasRect.left, 0
@@ -555,17 +651,76 @@ ClearCanvas proc
     ret
 ClearCanvas endp
 
+UpdateScrollPosition proc USES ebx, index:DWORD, mode:DWORD, value:DWORD
+    ; mode: 0 value, 1 delta, 2 trackPos
+    LOCAL scrollbarInfo:SCROLLINFO
+    LOCAL oldPos:DWORD
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
+    .IF index == 0
+        mov ebx, SB_VERT
+    .ELSE
+        mov ebx, SB_HORZ
+    .ENDIF
+    invoke GetScrollInfo, g_hWndCanvas, ebx, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov oldPos, eax
+    .IF mode == 0
+        mov eax, value
+        mov scrollbarInfo.nPos, eax
+    .ELSEIF mode == 1
+        mov eax, value
+        add scrollbarInfo.nPos, eax
+    .ELSE
+        mov eax, scrollbarInfo.nTrackPos
+        mov scrollbarInfo.nPos, eax
+    .ENDIF 
+    mov scrollbarInfo.fMask, SIF_POS
+    invoke SetScrollInfo, g_hWndCanvas, ebx, addr scrollbarInfo, TRUE
+    invoke GetScrollInfo, g_hWndCanvas, ebx, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    .IF eax != oldPos
+        mov edx, SCROLL_STEP_PIXEL
+        mul edx
+        xor edx, edx
+        div g_zoom
+        .IF index == 0
+            mov g_canvasOffsetY, eax
+        .ELSE
+            mov g_canvasOffsetX, eax
+        .ENDIF
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ENDIF
+    ret
+UpdateScrollPosition endp
+
+UpdateZoom proc mode:DWORD, value:DWORD
+    ; TODO: set scroll center
+    ; mode: 0 value, 1 delta
+    .IF mode == 0
+        mov eax, value
+    .ELSEIF mode == 1
+        mov eax, g_zoom
+        add eax, value
+    .ENDIF
+    .IF eax != 0
+        .IF eax <= MAX_ZOOM
+            .IF eax != g_zoom
+                mov g_zoom, eax
+                invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+                invoke UpdateScrollBarSize, g_hWndCanvas
+            .ENDIF
+        .ENDIF
+    .ENDIF
+    ret
+UpdateZoom endp
+
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hdc:HDC
     LOCAL ps:PAINTSTRUCT
     LOCAL canvasWndRect:RECT
     LOCAL scrollbarInfo:SCROLLINFO
-    LOCAL cxClient:DWORD
-    LOCAL cyClient:DWORD
-    LOCAL iVertPos:DWORD
-    LOCAL iHorzPos:DWORD
-    LOCAL scrollBarMsgPara:DWORD
     LOCAL canvasWidthMinusOffsetX:DWORD
     LOCAL canvasHeightMinusOffsetY:DWORD
     LOCAL widthAfterZoom:DWORD
@@ -576,69 +731,52 @@ CanvasWinProc proc USES ebx esi,
         invoke CreateCanvas, hWnd
         invoke ClearCanvas
     .ELSEIF uMsg == WM_SIZE
-        mov eax, lParam
-        movzx edx, ax
-        mov cxClient, edx
-        shr eax, 16
-        mov cyClient, eax
         invoke UpdateScrollBarSize, hWnd
-        
     .ELSEIF uMsg == WM_VSCROLL
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
-        invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
-        mov eax, scrollbarInfo.nPos
-        mov iVertPos, eax
-        
-        mov esi, wParam
-        mov eax, esi
-        movzx edx, ax
-        mov scrollBarMsgPara, edx
-        .IF scrollBarMsgPara == SB_LINEUP
-            sub scrollbarInfo.nPos, SCROLL_MOVE_STEPS
-        .ELSEIF scrollBarMsgPara == SB_LINEDOWN
-            add scrollbarInfo.nPos, SCROLL_MOVE_STEPS
-        .ELSEIF scrollBarMsgPara == SB_THUMBTRACK
-            mov eax, scrollbarInfo.nTrackPos
-            mov scrollbarInfo.nPos, eax
+        mov eax, wParam
+        movzx eax, ax
+        .IF eax == SB_LINEUP
+            invoke UpdateScrollPosition, 0, 1, -SCROLL_LINE_STEPS
+        .ELSEIF eax == SB_LINEDOWN
+            invoke UpdateScrollPosition, 0, 1, SCROLL_LINE_STEPS
+        .ELSEIF eax == SB_PAGEUP
+            invoke UpdateScrollPosition, 0, 1, -SCROLL_PAGE_STEPS
+        .ELSEIF eax == SB_PAGEDOWN
+            invoke UpdateScrollPosition, 0, 1, SCROLL_PAGE_STEPS
+        .ELSEIF eax == SB_THUMBTRACK
+            invoke UpdateScrollPosition, 0, 2, 0
         .ENDIF
-        mov scrollbarInfo.fMask, SIF_POS
-        invoke SetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo, TRUE
-        invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
-        mov eax, iVertPos
-        .IF eax != scrollbarInfo.nPos
-            invoke InvalidateRect, hWnd, NULL, FALSE
-        .ENDIF  
-        
     .ELSEIF uMsg == WM_HSCROLL
-        mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-        mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
-        invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
-        mov eax, scrollbarInfo.nPos
-        mov iHorzPos, eax
-        
-        mov esi, wParam
-        mov eax, esi
-        movzx edx, ax
-        mov scrollBarMsgPara, edx
-        .IF scrollBarMsgPara == SB_LINELEFT
-            sub scrollbarInfo.nPos, SCROLL_MOVE_STEPS
-        .ELSEIF scrollBarMsgPara == SB_LINERIGHT
-            add scrollbarInfo.nPos, SCROLL_MOVE_STEPS
-        .ELSEIF scrollBarMsgPara == SB_THUMBTRACK
-            mov eax, scrollbarInfo.nTrackPos
-            mov scrollbarInfo.nPos, eax
+        mov eax, wParam
+        movzx eax, ax
+        .IF eax == SB_LINEUP
+            invoke UpdateScrollPosition, 1, 1, -SCROLL_LINE_STEPS
+        .ELSEIF eax == SB_LINEDOWN
+            invoke UpdateScrollPosition, 1, 1, SCROLL_LINE_STEPS
+        .ELSEIF eax == SB_PAGEUP
+            invoke UpdateScrollPosition, 1, 1, -SCROLL_PAGE_STEPS
+        .ELSEIF eax == SB_PAGEDOWN
+            invoke UpdateScrollPosition, 1, 1, SCROLL_PAGE_STEPS
+        .ELSEIF eax == SB_THUMBTRACK
+            invoke UpdateScrollPosition, 1, 2, 0
         .ENDIF
-        mov scrollbarInfo.fMask, SIF_POS
-        invoke SetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo, TRUE
-        invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
-        mov eax, iHorzPos
-        .IF eax != scrollbarInfo.nPos
-            invoke InvalidateRect, hWnd, NULL, FALSE
+    .ELSEIF uMsg == WM_MOUSEWHEEL
+        mov eax, wParam
+        sar eax, 16
+        cdq
+        mov ebx, 120
+        idiv ebx
+        mov ebx, wParam
+        and ebx, MK_CONTROL
+        .IF ebx == 0
+            mov ebx, SCROLL_LINE_STEPS
+            imul ebx
+            neg eax
+            invoke UpdateScrollPosition, 0, 1, eax
+        .ELSE
+            invoke UpdateZoom, 1, eax            
         .ENDIF
-        
     .ELSEIF uMsg == WM_PAINT
-        invoke CalculateOffset, hWnd
         
         invoke BeginPaint, hWnd, addr ps
         mov hdc, eax
@@ -722,10 +860,10 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     invoke ShowWindow, g_hWnd, cmdShow
     invoke UpdateWindow, g_hWnd
     
-    invoke RegisterHotKey, g_hWnd, IDHK_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
-    invoke RegisterHotKey, g_hWnd, IDHK_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
-    invoke RegisterHotKey, g_hWnd, IDHK_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
-    invoke RegisterHotKey, g_hWnd, IDHK_QUIT, MOD_ALT or MOD_NOREPEAT, VK_F4
+    invoke RegisterHotKey, g_hWnd, IDM_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
+    invoke RegisterHotKey, g_hWnd, IDM_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
+    invoke RegisterHotKey, g_hWnd, IDM_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
+    ;invoke RegisterHotKey, g_hWnd, IDM_QUIT, MOD_ALT or MOD_NOREPEAT, VK_F4
     
     .WHILE TRUE
         invoke GetMessage, ADDR msg, NULL, 0, 0
@@ -733,7 +871,7 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
         invoke TranslateMessage, ADDR msg
         invoke DispatchMessage, ADDR msg
     .ENDW
-    
+
     mov eax,msg.wParam
     ret
 WinMain endp
