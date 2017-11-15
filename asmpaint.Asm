@@ -49,7 +49,6 @@ include asmpaint.Inc
     saveFileDialogName BYTE "Áí´æÎª", 0
     g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(0)
     defaultSaveAsName BYTE "untitle.bmp", 0
-    MAX_ZOOM equ 16
     
     DEFAULT_CANVAS_WIDTH equ 800
     DEFAULT_CANVAS_HEIGHT equ 600
