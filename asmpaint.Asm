@@ -548,7 +548,13 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
             hWnd, NULL, g_hInst, NULL
         mov g_hWndStatusBar, eax
-        ;calculate right edges of each part of status bar
+    .ELSEIF uMsg == WM_SIZE
+        invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
+        invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
+        invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
+               canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
+        invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
+        
         invoke GetClientRect, hWnd, addr clientRect
         mov eax, clientRect.right ;width
         mov statusBarEdges[8], eax
@@ -559,12 +565,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         sub eax, ebx
         mov statusBarEdges[0], eax
         invoke SendMessage, g_hWndStatusBar, SB_SETPARTS, 3, addr statusBarEdges
-    .ELSEIF uMsg == WM_SIZE
-        invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
-        invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
-        invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
-               canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
-        invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
     .ELSEIF uMsg == WM_HOTKEY
     	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
     .ELSEIF uMsg == WM_COMMAND
