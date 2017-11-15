@@ -41,7 +41,11 @@ include asmpaint.Inc
     confirmCloseDialogName BYTE "»­Í¼", 0
     coordinateFormat BYTE "%d, %d", 0ah, 0
     
+    aboutDialogText BYTE "À±¼¦»ã±à´ó×÷Äõ»ÙÎÒÇà´º¡£¬µôÎÒÍ··¢£¡", 0
+    
     MAX_FILE_NAME_SIZE equ 256
+    MAX_ZOOM equ 8
+
     saveFileDialogName BYTE "Áí´æÎª", 0
     g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(0)
     defaultSaveAsName BYTE "untitle.bmp", 0
@@ -57,9 +61,9 @@ include asmpaint.Inc
         
     SCROLL_STEP_PIXEL equ 4
     SCROLL_LINE_STEPS equ 25
-    SCROLL_PAGE_STEPS equ 25
+    SCROLL_PAGE_STEPS equ 100
+    CANVAS_MARGIN equ 3
     TOOLBAR_WIDTH equ 48
-    CANVAS_MARGIN equ 5
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
@@ -148,6 +152,7 @@ UpdateScrollBarSize proc USES ebx,
     mov eax, g_canvasHeight
     mov edx, g_zoom
     mul edx
+    add eax, 2 * CANVAS_MARGIN
     mov ebx, SCROLL_STEP_PIXEL
     xor edx, edx
     div ebx 
@@ -174,6 +179,7 @@ UpdateScrollBarSize proc USES ebx,
     mov eax, g_canvasWidth
     mov edx, g_zoom
     mul edx
+    add eax, 2 * CANVAS_MARGIN
     mov ebx, SCROLL_STEP_PIXEL
     xor edx, edx
     div ebx 
@@ -607,7 +613,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         mov statusBarEdges[0], eax
         invoke SendMessage, g_hWndStatusBar, SB_SETPARTS, 3, addr statusBarEdges
     .ELSEIF uMsg == WM_HOTKEY
-    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
+    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, 0
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
@@ -656,7 +662,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
             invoke PromptColor, 1
-        .ELSEIF wParam == IDM_QUIT
+        .ELSEIF wParam == IDM_EXIT
             invoke SendMessage, hWnd, WM_CLOSE, 0, 0
         .ELSE
             mov eax, wParam
@@ -667,7 +673,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     	invoke DragQueryFile, wParam, 0, addr filenameTemp, MAX_FILE_NAME_SIZE
     	.IF eax != 0
     	    invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
-    	.ENDIF 
+    	.ENDIF
     .ELSEIF uMsg == WM_CLOSE
         .IF g_isModified == 1
             call ConfirmSaveModify
@@ -681,7 +687,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
     .ENDIF
-    
+
     xor eax,eax
     ret
 WndProc endp
@@ -776,16 +782,71 @@ UpdateZoom proc mode:DWORD, value:DWORD
     ret
 UpdateZoom endp
 
-CanvasWinProc proc USES ebx esi,
-    hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
+Render proc hWnd:HWND
     LOCAL hdc:HDC
+    LOCAL hdcBuffer:HDC
+    LOCAL hBitmapBuffer:HBITMAP
+    LOCAL rect:RECT
+    LOCAL rectCanvas:RECT
+    LOCAL hBrush:HBRUSH
     LOCAL ps:PAINTSTRUCT
-    LOCAL canvasWndRect:RECT
-    LOCAL scrollbarInfo:SCROLLINFO
-    LOCAL canvasWidthMinusOffsetX:DWORD
-    LOCAL canvasHeightMinusOffsetY:DWORD
     LOCAL widthAfterZoom:DWORD
     LOCAL heightAfterZoom:DWORD
+    LOCAL canvasWidthMinusOffsetX:DWORD
+    LOCAL canvasHeightMinusOffsetY:DWORD
+
+    invoke GetClientRect, hWnd, addr rect
+    invoke GetDC, hWnd
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov hdcBuffer, eax
+    mov eax, rect.right
+    sub eax, rect.left
+    mov rectCanvas.left, 0
+    mov rectCanvas.right, eax
+    mov eax, rect.bottom
+    sub eax, rect.top
+    mov rectCanvas.top, 0
+    mov rectCanvas.bottom, eax
+    invoke CreateCompatibleBitmap, hdc, rectCanvas.right, rectCanvas.bottom
+    mov hBitmapBuffer, eax
+    invoke ReleaseDC, hWnd, hdc
+    invoke SelectObject, hdcBuffer, hBitmapBuffer
+
+    invoke CreateSolidBrush, 0abababh
+    mov hBrush, eax
+    invoke FillRect, hdcBuffer, addr rect, hBrush
+    invoke DeleteObject, hBrush 
+    
+    mov eax, g_canvasWidth
+    sub eax, g_canvasOffsetX
+    mov canvasWidthMinusOffsetX, eax
+    mov ebx, g_zoom
+    mul ebx
+    mov widthAfterZoom, eax
+    mov eax, g_canvasHeight
+    sub eax, g_canvasOffsetY
+    mov canvasHeightMinusOffsetY, eax
+    mov ebx, g_zoom
+    mul ebx
+    mov heightAfterZoom, eax
+    invoke StretchBlt, hdcBuffer, CANVAS_MARGIN, CANVAS_MARGIN, widthAfterZoom, heightAfterZoom, \
+           g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, canvasWidthMinusOffsetX, canvasHeightMinusOffsetY, \
+           SRCCOPY
+    
+    invoke BeginPaint, hWnd, addr ps
+    mov hdc, eax
+    invoke StretchBlt, hdc, rect.left, rect.top, rectCanvas.right, rectCanvas.bottom, \
+           hdcBuffer, 0, 0, rectCanvas.right, rectCanvas.bottom, \
+           SRCCOPY
+    invoke EndPaint, hWnd, addr ps
+    invoke DeleteObject, hBitmapBuffer
+    invoke DeleteDC, hdcBuffer
+    ret
+Render endp
+
+CanvasWinProc proc USES ebx esi,
+    hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     
     .IF uMsg == WM_CREATE
         ; ===== Create HDC Buffer =====
@@ -838,29 +899,7 @@ CanvasWinProc proc USES ebx esi,
             invoke UpdateZoom, 1, eax            
         .ENDIF
     .ELSEIF uMsg == WM_PAINT
-        
-        invoke BeginPaint, hWnd, addr ps
-        mov hdc, eax
-        
-        ;invoke Rectangle, g_hdcBuf, 10, 10, 100, 300
-        ;mov g_isModified, 1
-        
-        mov eax, g_canvasWidth
-        sub eax, g_canvasOffsetX
-        mov canvasWidthMinusOffsetX, eax
-        mov ebx, g_zoom
-        mul ebx
-        mov widthAfterZoom, eax
-        mov eax, g_canvasHeight
-        sub eax, g_canvasOffsetY
-        mov canvasHeightMinusOffsetY, eax
-        mov ebx, g_zoom
-        mul ebx
-        mov heightAfterZoom, eax
-        invoke StretchBlt , hdc, 0, 0, widthAfterZoom, heightAfterZoom, \
-               g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, canvasWidthMinusOffsetX, canvasHeightMinusOffsetY, \
-               SRCCOPY
-        invoke EndPaint, hWnd, addr ps
+        invoke Render, hWnd
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
@@ -916,7 +955,6 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, \
            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, \
            hInst, NULL
-
     mov g_hWnd, eax
     
     ; ==== Enable drag and drop ====
@@ -928,7 +966,6 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     invoke RegisterHotKey, g_hWnd, IDM_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
     invoke RegisterHotKey, g_hWnd, IDM_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
     invoke RegisterHotKey, g_hWnd, IDM_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
-    ;invoke RegisterHotKey, g_hWnd, IDM_QUIT, MOD_ALT or MOD_NOREPEAT, VK_F4
     
     .WHILE TRUE
         invoke GetMessage, ADDR msg, NULL, 0, 0
