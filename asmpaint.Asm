@@ -97,6 +97,7 @@ UpdateScrollBarSize proto
     g_cursorInst HINSTANCE NULL
     g_cursor DWORD 0
     g_isMouseDown DWORD FALSE
+    g_isDrawing DWORD FALSE
     
     g_previousPoint POINT <0, 0>
 
@@ -115,10 +116,25 @@ UpdateScrollBarSize proto
     g_hAccel HACCEL ?
     g_hMenu HMENU ?
     
+    g_hdcDrawingBuf HDC ?
+    g_hdcDrawingBitmap HDC ?
+    
     g_foregroundColor DWORD ?
     g_backgroundColor DWORD ?
     
 .code
+
+StartDrawing proc
+    
+    
+    ret
+StartDrawing endp
+
+StopDrawing proc applyChange:DWORD ;Bool
+    
+    
+    ret
+StopDrawing endp
 
 CreateCanvas proc hWnd:HWND
     LOCAL hdc: HDC
@@ -226,6 +242,7 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
     invoke UpdateScrollBarSize
     invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    mov g_isModified, FALSE
     ret
 LoadBitmapFromFile endp
 
@@ -638,8 +655,15 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_DROPFILES
     	invoke DragQueryFile, wParam, 0, addr filenameTemp, MAX_FILE_NAME_SIZE
     	.IF eax != 0
+    	    .IF g_isModified == TRUE
+    	        invoke ConfirmSaveModify
+                .IF eax == 0
+                    jmp DontOpenDropFile
+                .endif
+            .ENDIF
     	    invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
     	.ENDIF
+    	DontOpenDropFile:
     .ELSEIF uMsg == WM_CLOSE
         .IF g_isModified == 1
             invoke ConfirmSaveModify
@@ -1009,9 +1033,10 @@ UpdataCursor proc
 UpdataCursor endp
 
 HandleLButtonDownMessage proc wParam:WPARAM
+    invoke SetCapture, g_hWndCanvas
     .IF g_toolbarStatus == IDM_PENCIL
         ; TODO: save current bitmap
-        invoke SetCapture, g_hWndCanvas
+        mov g_isDrawing, TRUE
         invoke SetPen, g_hdcBuf
         invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
         invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
@@ -1020,6 +1045,8 @@ HandleLButtonDownMessage proc wParam:WPARAM
         mov eax, g_mouseCanvasY
         mov g_previousPoint.y, eax
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
+        
     .ENDIF
     ret
 HandleLButtonDownMessage endp
@@ -1040,9 +1067,10 @@ HandleMouseMoveMessage endp
 HandleLButtonUpMessage proc wParam:WPARAM
     .IF g_toolbarStatus == IDM_PENCIL
         invoke DeletePen
-        invoke ReleaseCapture
         mov g_isModified, TRUE
+        mov g_isDrawing, FALSE
     .ENDIF
+    invoke ReleaseCapture
     ret
 HandleLButtonUpMessage endp
 
@@ -1121,8 +1149,10 @@ CanvasWinProc proc USES ebx esi,
             invoke HandleMouseMoveMessage, wParam
         .ENDIF
     .ELSEIF uMsg == WM_LBUTTONUP
-        mov g_isMouseDown, FALSE
-        invoke HandleLButtonUpMessage, wParam
+        .IF g_isMouseDown == TRUE
+            invoke HandleLButtonUpMessage, wParam
+            mov g_isMouseDown, FALSE
+        .ENDIF
     .ELSEIF uMsg == WM_MOUSELEAVE
         mov g_mouseInCanvas, 0
         mov g_mouseTracking, 0
