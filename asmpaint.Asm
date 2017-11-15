@@ -10,7 +10,7 @@ include asmpaint.Inc
    
     toolbarClassName BYTE "ToolbarWindow32",0
     statusBarClassName BYTE "msctls_statusbar32", 0
-   
+
     g_tbControlButtons \
         TBBUTTON <8, 0, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_SEP, 0, 0, NULL>
         TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
@@ -41,7 +41,8 @@ include asmpaint.Inc
     confirmCloseDialogName BYTE "»­Í¼", 0
     coordinateFormat BYTE "%d, %d", 0ah, 0
     
-    aboutDialogText BYTE "À±¼¦»ã±à´ó×÷Äõ»ÙÎÒÇà´º¡£¬µôÎÒÍ··¢£¡", 0
+    aboutDialogText BYTE "ÓÉ³µÐÐ¡¢Ëï×ÓÆ½¡¢ÕÔÉÐÃ÷Ð­×÷¿ª·¢Íê³É¡£", 0ah, "ÒÔ¼°£¬À±¼¦´ó×÷Äõ£¬»ÙÎÒÇà´º£¬µôÎÒÍ··¢£¡", 0
+    aboutDialogName BYTE "¹ØÓÚ", 0
     
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
@@ -62,6 +63,7 @@ include asmpaint.Inc
 
     debugWndProcMsg BYTE "%u %u %d",0ah,0
     debugPrintInt BYTE "%d", 0ah, 0
+    debugPoint BYTE "%5d   %5d", 0ah, 0
     ;debug
     showDraggedFileNum BYTE "Dragged file num: %d", 0ah, 0
     showFileToOpen BYTE "File to open: ", 0
@@ -81,7 +83,13 @@ include asmpaint.Inc
     BMPSuffix BYTE ".BMP", 0
     suffixes DWORD offset BMPSuffix;jpgSuffix, offset jpegSuffix, offset pngSuffix, offset bmpSuffix, offset JPGSuffix, offset JPEGSuffix, offset PNGSuffix, offset BMPSuffix
     fileSuffixPtr DWORD 00000000h
-    
+
+    g_mouseCanvasX SDWORD 0
+    g_mouseCanvasY SDWORD 0
+    g_mouseClientX SDWORD 0
+    g_mouseClientY SDWORD 0
+    g_mouseInCanvas DWORD 0
+    g_mouseTracking DWORD 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -176,7 +184,6 @@ UpdateScrollBarSize proc USES ebx,
     xor edx, edx
     div g_zoom
     mov g_canvasOffsetX, eax
- 
     ret
 UpdateScrollBarSize endp
 
@@ -488,7 +495,6 @@ PromptColor endp
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
-    LOCAL filenameTemp[MAX_FILE_NAME_SIZE]:BYTE
     LOCAL count:DWORD
     LOCAL cursorPos:POINT
     LOCAL cursorPosMsg[100]:BYTE
@@ -496,32 +502,13 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL relativeCursorPos:POINT
     LOCAL statusBarEdges[3]:DWORD
     LOCAL clientRect:RECT
-    
-    .IF uMsg != WM_CREATE
-    	invoke GetCursorPos, addr cursorPos
-    	invoke GetWindowRect, g_hWndCanvas, addr canvasRect
-    	mov eax, cursorPos.x
-    	sub eax, canvasRect.left
-    	mov relativeCursorPos.x, eax
-    	mov eax, cursorPos.y
-    	sub eax, canvasRect.top
-    	mov relativeCursorPos.y, eax
-    	
-    	;problems remain: can't get paper's rect
-    	mov eax, canvasRect.right
-    	mov ebx, canvasRect.bottom
-    	.IF relativeCursorPos.x <= 10000000h && cursorPos.x <= eax && relativeCursorPos.y <= 10000000h && cursorPos.y <= ebx
-    		invoke wsprintf, addr cursorPosMsg, offset coordinateFormat, relativeCursorPos.x, relativeCursorPos.y
-    		;debug
-    		;invoke crt_printf, addr cursorPosMsg
-    		invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 00000002h, addr cursorPosMsg
-        .ELSE
-        	invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 00000002h, NULL
-    	.endif
-    .endif
+    LOCAL filenameTemp[MAX_FILE_NAME_SIZE]:BYTE
+
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
     .ELSEIF uMsg == WM_CREATE
+        mov eax, hWnd
+        mov g_hWnd, eax
         ; ==== Create Left Control Toolbar ====
         invoke CreateWindowEx, 0, addr toolbarClassName, NULL, \
             CCS_VERT or CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS, 0, 0, 0, 0, \
@@ -544,9 +531,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke CalculateCanvasWindowPosition, hWnd, g_hWndControl, addr canvasWndRect
         invoke CreateWindowEx, 0, addr canvasClassName, NULL, WS_CHILD or WS_HSCROLL or WS_VSCROLL, \
                canvasWndRect.left, canvasWndRect.top, canvasWndRect.right, canvasWndRect.bottom, \
-               hWnd, NULL, g_hInst, NULL
-        mov g_hWndCanvas, eax
-        
+               hWnd, NULL, g_hInst, NULL        
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
         ; ===== Create Coordinate status bar =====
         invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
@@ -586,11 +571,12 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke PromptColor, 1
         .ELSEIF wParam == IDM_EXIT
             invoke SendMessage, hWnd, WM_CLOSE, 0, 0
+        .ELSEIF wParam == IDM_ABOUT
+            invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
         .ELSE
             mov eax, wParam
             mov g_toolbarStatus, eax
         .ENDIF
-        
     .ELSEIF uMsg == WM_DROPFILES
     	invoke DragQueryFile, wParam, 0, addr filenameTemp, MAX_FILE_NAME_SIZE
     	.IF eax != 0
@@ -616,32 +602,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     xor eax,eax
     ret
 WndProc endp
-
-CalculateOffset proc hWnd:HWND
-    LOCAL scrollbarInfo:SCROLLINFO
-    
-    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
-    invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
-    mov eax, scrollbarInfo.nPos
-    mov edx, SCROLL_STEP_PIXEL
-    mul edx
-    mov ebx, g_zoom
-    xor edx, edx
-    div ebx
-    mov g_canvasOffsetY, eax
-    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
-    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
-    invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
-    mov eax, scrollbarInfo.nPos
-    mov edx, SCROLL_STEP_PIXEL
-    mul edx
-    mov ebx, g_zoom
-    xor edx, edx
-    div ebx
-    mov g_canvasOffsetX, eax
-    ret
-CalculateOffset endp
 
 ClearCanvas proc
     LOCAL canvasRect:RECT
@@ -707,14 +667,10 @@ UpdateZoom proc mode:DWORD, value:DWORD
         mov eax, g_zoom
         add eax, value
     .ENDIF
-    .IF eax != 0
-        .IF eax <= MAX_ZOOM
-            .IF eax != g_zoom
-                mov g_zoom, eax
-                invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
-                invoke UpdateScrollBarSize, g_hWndCanvas
-            .ENDIF
-        .ENDIF
+    .IF eax != 0 && eax <= MAX_ZOOM && eax != g_zoom
+        mov g_zoom, eax
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        invoke UpdateScrollBarSize, g_hWndCanvas
     .ENDIF
     ret
 UpdateZoom endp
@@ -773,22 +729,56 @@ Render proc hWnd:HWND
     
     invoke BeginPaint, hWnd, addr ps
     mov hdc, eax
-    invoke StretchBlt, hdc, rect.left, rect.top, rectCanvas.right, rectCanvas.bottom, \
-           hdcBuffer, 0, 0, rectCanvas.right, rectCanvas.bottom, \
-           SRCCOPY
+    invoke BitBlt, hdc, rect.left, rect.top, rectCanvas.right, rectCanvas.bottom, \
+           hdcBuffer, 0, 0, SRCCOPY
     invoke EndPaint, hWnd, addr ps
     invoke DeleteObject, hBitmapBuffer
     invoke DeleteDC, hdcBuffer
     ret
 Render endp
 
+ClientToCanvasX proc pos:DWORD
+    mov eax, pos
+    sub eax, CANVAS_MARGIN
+    cdq
+    idiv g_zoom
+    add eax, g_canvasOffsetX
+    ret
+ClientToCanvasX endp
+
+ClientToCanvasY proc pos:DWORD
+    mov eax, pos
+    sub eax, CANVAS_MARGIN
+    cdq
+    idiv g_zoom
+    add eax, g_canvasOffsetY
+    ret
+ClientToCanvasY endp
+
+CanvasTrackMouse proc
+    LOCAL trackMouseEvent:TRACKMOUSEEVENT
+    .IF g_mouseTracking == 0
+        mov trackMouseEvent.cbSize, sizeof TRACKMOUSEEVENT 
+        mov trackMouseEvent.dwFlags, TME_LEAVE
+        mov eax, g_hWndCanvas
+        mov trackMouseEvent.hwndTrack, eax
+        invoke TrackMouseEvent, addr trackMouseEvent
+        mov g_mouseTracking, 1
+    .ENDIF
+    ret
+CanvasTrackMouse endp 
+
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
-    
+
     .IF uMsg == WM_CREATE
+        mov eax, hWnd
+        mov g_hWndCanvas, eax
         ; ===== Create HDC Buffer =====
         invoke CreateCanvas, hWnd
         invoke ClearCanvas
+        invoke DragAcceptFiles, hWnd, TRUE
+        invoke CanvasTrackMouse
     .ELSEIF uMsg == WM_SIZE
         invoke UpdateScrollBarSize, hWnd
     .ELSEIF uMsg == WM_VSCROLL
@@ -819,6 +809,8 @@ CanvasWinProc proc USES ebx esi,
         .ELSEIF eax == SB_THUMBTRACK
             invoke UpdateScrollPosition, 1, 2, 0
         .ENDIF
+    .ELSEIF uMsg == WM_DROPFILES
+        invoke SendMessage, g_hWnd, uMsg, wParam, lParam
     .ELSEIF uMsg == WM_MOUSEWHEEL
         mov eax, wParam
         sar eax, 16
@@ -837,6 +829,28 @@ CanvasWinProc proc USES ebx esi,
         .ENDIF
     .ELSEIF uMsg == WM_PAINT
         invoke Render, hWnd
+    .ELSEIF uMsg == WM_MOUSEMOVE
+        mov eax, lParam
+        movzx edx, ax
+        mov g_mouseClientX, edx
+        shr eax, 16
+        movzx edx, ax
+        mov g_mouseClientY, edx
+        invoke ClientToCanvasX, g_mouseClientX
+        mov g_mouseCanvasX, eax
+        invoke ClientToCanvasY, g_mouseClientY
+        mov g_mouseCanvasY, eax
+        mov ecx, g_canvasWidth
+        mov edx, g_canvasHeight
+        .IF g_mouseCanvasX >= 0 && g_mouseCanvasX < ecx && g_mouseCanvasY >= 0 && g_mouseCanvasY < edx
+            mov g_mouseInCanvas, 1
+        .ELSE
+            mov g_mouseInCanvas, 0
+        .ENDIF
+        invoke CanvasTrackMouse
+    .ELSEIF uMsg == WM_MOUSELEAVE
+        mov g_mouseInCanvas, 0
+        mov g_mouseTracking, 0
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
@@ -892,10 +906,6 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, \
            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, \
            hInst, NULL
-    mov g_hWnd, eax
-    
-    ; ==== Enable drag and drop ====
-    invoke DragAcceptFiles, g_hWnd, TRUE
     
     invoke ShowWindow, g_hWnd, cmdShow
     invoke UpdateWindow, g_hWnd
@@ -903,7 +913,7 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     invoke RegisterHotKey, g_hWnd, IDM_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
     invoke RegisterHotKey, g_hWnd, IDM_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
     invoke RegisterHotKey, g_hWnd, IDM_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
-    
+
     .WHILE TRUE
         invoke GetMessage, ADDR msg, NULL, 0, 0
         .BREAK .IF !eax
