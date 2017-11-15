@@ -70,6 +70,7 @@ UpdateScrollBarSize proto
     STATUSBAR_INFO_MINWIDTH equ 520
     STATUSBAR_COORDINATES_WIDTH equ 120
     STATUSBAR_ENDING_WIDTH equ 24
+    UNDO_MAX_TIMES equ 10
 
     debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
     debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
@@ -89,17 +90,24 @@ UpdateScrollBarSize proto
     FILL_DEFAULT equ 0
     FILL_WITHOUT_BORDER equ 1
     FILL_WITHOUT_FILL equ 2
-    g_fillType DWORD FILL_WITHOUT_BORDER
-    g_penWidth DWORD 10
+    g_fillType DWORD FILL_DEFAULT
+    g_penWidth DWORD 1
     
     g_pen HPEN NULL
     g_brush HBRUSH NULL
 
     g_cursorInst HINSTANCE NULL
     g_cursor DWORD 0
+    g_isMouseDown DWORD FALSE
+    g_isDrawing DWORD FALSE
+    
+    g_previousPoint POINT <0, 0>
 
     g_hasToolbar DWORD 1
     g_hasStatusBar DWORD 1
+    
+    g_undoRedoCurr DWORD 0
+    g_undoRedoTail DWORD 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -115,7 +123,21 @@ UpdateScrollBarSize proto
     
     g_foregroundColor DWORD ?
     g_backgroundColor DWORD ?
+    
+    g_undoRedo HBITMAP UNDO_MAX_TIMES dup(?)
 .code
+
+ClearUndoRedo proc
+ClearUndoRedo endp
+
+Undo proc
+    
+    ret
+Undo endp
+
+Redo proc
+    ret
+Redo endp
 
 CreateCanvas proc hWnd:HWND
     LOCAL hdc: HDC
@@ -622,13 +644,16 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             mov g_hasStatusBar, eax
             invoke UpdateCanvasWindowPosition
             invoke InvalidateRect, hWnd, NULL, FALSE
+        .ELSEIF eax == IDM_CLEAR
+            invoke ClearCanvas
+            invoke InvalidateRect, hWnd, NULL, FALSE
         .ELSEIF eax == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF eax == IDM_BACKGROUND_COLOR
             invoke PromptColor, 1
         .ELSEIF eax == IDM_ABOUT
             invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
-        .ELSE
+        .ELSEIF eax >= IDM_TOOLBAR_FIRST && eax <=IDM_TOOLBAR_LAST
             mov eax, wParam
             mov g_toolbarStatus, eax
         .ENDIF
@@ -687,7 +712,7 @@ UpdateMousePos proc
     mov g_mouseCanvasY, eax
     mov ecx, g_canvasWidth
     mov edx, g_canvasHeight
-    invoke crt_printf, offset debugPoint, g_mouseCanvasX, g_mouseCanvasY
+    ;invoke crt_printf, offset debugPoint, g_mouseCanvasX, g_mouseCanvasY
     .IF g_mouseCanvasX >= 0 && g_mouseCanvasX < ecx && g_mouseCanvasY >= 0 && g_mouseCanvasY < edx
         mov g_mouseInCanvas, 1
     .ELSE
@@ -967,44 +992,87 @@ CanvasTrackMouse proc
 CanvasTrackMouse endp
 
 UpdateCursor proc
-    .IF g_mouseInCanvas == 1
-        .IF g_toolbarStatus == IDM_PAINT_BARREL
-            mov edx, g_hInst
-            mov ecx, IDC_BUCKET
-        .ELSEIF g_toolbarStatus == IDM_COLOR_PICKER
-            mov edx, g_hInst
-            mov ecx, IDC_PICK
-        .ELSEIF g_toolbarStatus == IDM_MAGNIFIER
-            mov edx, g_hInst
-            mov ecx, IDC_ZOOM
-        .ELSEIF g_toolbarStatus == IDM_PENCIL
-            mov edx, g_hInst
-            mov ecx, IDC_PEN
-        .ELSEIF g_toolbarStatus == IDM_BRASH
-            mov edx, g_hInst
-            mov ecx, IDC_BRUSH
-        .ELSEIF g_toolbarStatus == IDM_AIRBRUSH
-            mov edx, g_hInst
-            mov ecx, IDC_SPRAY
-        .ELSEIF g_toolbarStatus == IDM_ERASER
+    .IF g_isDrawing == FALSE
+        .IF g_mouseInCanvas == 1
+            .IF g_toolbarStatus == IDM_PAINT_BARREL
+                mov edx, g_hInst
+                mov ecx, IDC_BUCKET
+            .ELSEIF g_toolbarStatus == IDM_COLOR_PICKER
+                mov edx, g_hInst
+                mov ecx, IDC_PICK
+            .ELSEIF g_toolbarStatus == IDM_MAGNIFIER
+                mov edx, g_hInst
+                mov ecx, IDC_ZOOM
+            .ELSEIF g_toolbarStatus == IDM_PENCIL
+                mov edx, g_hInst
+                mov ecx, IDC_PEN
+            .ELSEIF g_toolbarStatus == IDM_BRASH
+                mov edx, g_hInst
+                mov ecx, IDC_BRUSH
+            .ELSEIF g_toolbarStatus == IDM_AIRBRUSH
+                mov edx, g_hInst
+                mov ecx, IDC_SPRAY
+            .ELSEIF g_toolbarStatus == IDM_ERASER
+                mov edx, NULL
+                mov ecx, IDC_ARROW
+            .ELSE
+                mov edx, g_hInst
+                mov ecx, IDC_SELECT
+            .ENDIF
+        .ELSE
             mov edx, NULL
             mov ecx, IDC_ARROW
-        .ELSE
-            mov edx, g_hInst
-            mov ecx, IDC_SELECT
         .ENDIF
-    .ELSE
-        mov edx, NULL
-        mov ecx, IDC_ARROW
-    .ENDIF
-    .IF g_cursorInst != edx || g_cursor != ecx
-        mov g_cursorInst, edx
-        mov g_cursor, ecx
-        invoke LoadCursor, g_cursorInst, g_cursor
-        invoke SetCursor, eax
+        .IF g_cursorInst != edx || g_cursor != ecx
+            mov g_cursorInst, edx
+            mov g_cursor, ecx
+            invoke LoadCursor, g_cursorInst, g_cursor
+            invoke SetCursor, eax
+        .ENDIF
     .ENDIF
     ret
 UpdateCursor endp
+
+HandleLButtonDownMessage proc wParam:WPARAM
+    .IF g_toolbarStatus == IDM_PENCIL
+        ; TODO: save current bitmap
+        mov g_isDrawing, TRUE
+        invoke SetCapture, g_hWndCanvas
+        invoke SetPen, g_hdcBuf
+        invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
+        invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        mov eax, g_mouseCanvasX
+        mov g_previousPoint.x, eax
+        mov eax, g_mouseCanvasY
+        mov g_previousPoint.y, eax
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ENDIF
+    ret
+HandleLButtonDownMessage endp
+
+HandleMouseMoveMessage proc wParam:WPARAM
+    .IF g_toolbarStatus == IDM_PENCIL
+        invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
+        invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        mov eax, g_mouseCanvasX
+        mov g_previousPoint.x, eax
+        mov eax, g_mouseCanvasY
+        mov g_previousPoint.y, eax
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ENDIF
+    ret
+HandleMouseMoveMessage endp
+
+HandleLButtonUpMessage proc wParam:WPARAM
+    .IF g_toolbarStatus == IDM_PENCIL
+        invoke DeletePen
+        invoke ReleaseCapture
+        mov g_isDrawing, FALSE
+        invoke UpdateCursor
+        mov g_isModified, TRUE
+    .ENDIF
+    ret
+HandleLButtonUpMessage endp
 
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
@@ -1067,11 +1135,22 @@ CanvasWinProc proc USES ebx esi,
         .ENDIF
     .ELSEIF uMsg == WM_PAINT
         invoke Render, hWnd
+    .ELSEIF uMsg == WM_LBUTTONDOWN
+        .IF g_mouseInCanvas
+            mov g_isMouseDown, TRUE
+            invoke HandleLButtonDownMessage, wParam
+        .ENDIF
     .ELSEIF uMsg == WM_MOUSEMOVE
         invoke CanvasTrackMouse
         invoke UpdateMousePos
         invoke UpdateStatusBarMouseCoordinate
         invoke UpdateCursor
+        .IF g_isMouseDown == TRUE
+            invoke HandleMouseMoveMessage, wParam
+        .ENDIF
+    .ELSEIF uMsg == WM_LBUTTONUP
+        mov g_isMouseDown, FALSE
+        invoke HandleLButtonUpMessage, wParam
     .ELSEIF uMsg == WM_MOUSELEAVE
         mov g_mouseInCanvas, 0
         mov g_mouseTracking, 0
