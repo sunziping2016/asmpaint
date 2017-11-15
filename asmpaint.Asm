@@ -9,6 +9,7 @@ include asmpaint.Inc
     appName BYTE "画图",0
    
     toolbarClassName BYTE "ToolbarWindow32",0
+    statusBarClassName BYTE "msctls_statusbar32", 0
    
     g_tbControlButtons \
         TBBUTTON <8, 0, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_SEP, 0, 0, NULL>
@@ -38,10 +39,13 @@ include asmpaint.Inc
     
     confirmCloseDialogText BYTE "将更改保存到文件吗？", 0
     confirmCloseDialogName BYTE "画图", 0
+    coordinateFormat BYTE "%d, %d", 0ah, 0
     
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
 
+    saveFileDialogName BYTE "另存为", 0
+    g_bitmapName BYTE "untitle.bmp", MAX_FILE_NAME_SIZE dup(0)
     g_canvasWidth DWORD 800
     g_canvasHeight DWORD 600
     g_canvasOffsetX DWORD 0
@@ -76,21 +80,19 @@ include asmpaint.Inc
     suffixes DWORD offset BMPSuffix;jpgSuffix, offset jpegSuffix, offset pngSuffix, offset bmpSuffix, offset JPGSuffix, offset JPEGSuffix, offset PNGSuffix, offset BMPSuffix
     fileSuffixPtr DWORD 00000000h
     
-    count DWORD ?
-    
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
     g_hWnd HWND ?
     g_hWndControl HWND ?
     g_hWndCanvas HWND ?
+    g_hWndStatusBar HWND ?
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
-    g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(?)
+    
     g_foregroundColor DWORD ?
     g_backgroundColor DWORD ?
-
 .code
 
 CreateCanvas proc hWnd:HWND
@@ -180,8 +182,10 @@ CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasR
     ; Note: canvasRect.left = left pos,  canvasRect.right  = width
     ;       canvasRect.top  = top pos,   canvasRect.bottom = height
     LOCAL hWndRect:RECT
+    LOCAL rectStatusBar:RECT
     
     invoke GetClientRect, hWnd, addr hWndRect
+    invoke GetWindowRect, g_hWndStatusBar, addr rectStatusBar
     
     mov esi, [canvasRect]
     
@@ -192,14 +196,20 @@ CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasR
     sub eax, TOOLBAR_WIDTH
     mov (RECT PTR [esi]).right, eax
     
+    
     mov eax, hWndRect.bottom
+    mov edx, rectStatusBar.bottom
+    sub edx, rectStatusBar.top
+    sub eax, edx
     mov (RECT PTR [esi]).bottom, eax
     
     ret
 CalculateCanvasWindowPosition endp
 
-OpenOpenFileDialog proc hWnd:HWND
+OpenOpenBitmapDialog proc USES esi, 
+    hWnd:HWND, pfilename:PTR
     LOCAL openFileStruct:OPENFILENAME
+    ; ==== Open dialog ====
     mov openFileStruct.lStructSize, SIZEOF openFileStruct
     mov eax, hWnd
     mov openFileStruct.hwndOwner, eax
@@ -207,8 +217,10 @@ OpenOpenFileDialog proc hWnd:HWND
     mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
     mov openFileStruct.lpstrCustomFilter, NULL
     mov openFileStruct.nFilterIndex, 0
-    mov g_bitmapName, 0
-    mov openFileStruct.lpstrFile, OFFSET g_bitmapName
+    mov esi, pfilename
+    mov (BYTE PTR [esi]), 0
+    mov eax, pfilename
+    mov openFileStruct.lpstrFile, eax
     mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
     mov openFileStruct.lpstrFileTitle, NULL
     mov openFileStruct.nMaxFileTitle, 0
@@ -218,32 +230,184 @@ OpenOpenFileDialog proc hWnd:HWND
     mov openFileStruct.lpstrDefExt, NULL
     invoke GetOpenFileName, addr openFileStruct
     ret
-OpenOpenFileDialog endp
+OpenOpenBitmapDialog endp
 
-LoadBitmapFromFile proc hWnd:HWND
+LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR   
     LOCAL bm:BITMAP
-    LOCAL bitmapHandle:HANDLE
-    invoke LoadImage, NULL, OFFSET g_bitmapName, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE
+    LOCAL bitmapHandle:HANDLE 
+    ; ==== Load Bitmap ====
+    invoke LoadImage, NULL, pfilename, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE
     mov bitmapHandle, eax
     .IF eax == NULL
         ret
     .endif
+    invoke crt_strcpy, offset g_bitmapName, pfilename
     invoke GetObject, bitmapHandle, SIZEOF bm, addr bm
     mov eax, bm.bmWidth
     mov g_canvasWidth, eax
     mov eax, bm.bmHeight
     mov g_canvasHeight, eax
     call DestoryCanvas
-    invoke GetDC, hWnd
+    invoke GetDC, g_hWndCanvas
     invoke CreateCompatibleDC, eax
     mov g_hdcBuf, eax
     mov eax, bitmapHandle
     mov g_hdcBitmap, eax
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
-    invoke UpdateScrollBarSize, hWnd
-    invoke InvalidateRect, hWnd, NULL, TRUE
+    invoke UpdateScrollBarSize, g_hWndCanvas
+    invoke InvalidateRect, g_hWndCanvas, NULL, TRUE
     ret
 LoadBitmapFromFile endp
+
+CreateBitmapInfoStruct proc USES ebx esi
+    LOCAL pbmi:PTR ; Bitmap info pointer
+    LOCAL cClrBits:DWORD
+    LOCAL bmp:BITMAP
+    
+    invoke GetObject, g_hdcBitmap, SIZEOF bmp, addr bmp 
+    movzx eax, bmp.bmPlanes
+    movzx ebx, bmp.bmBitsPixel
+    mul ebx
+    mov cClrBits, eax
+    .IF cClrBits == 1
+        mov cClrBits, 1
+    .ELSEIF cClrBits <= 4
+        mov cClrBits, 4
+    .ELSEIF cClrBits <= 8
+        mov cClrBits, 8
+    .ELSEIF cClrBits <= 16
+        mov cClrBits, 16
+    .ELSEIF cClrBits <= 24
+        mov cClrBits, 24
+    .ELSE
+        mov cClrBits, 32
+    .ENDIF
+    .IF cClrBits < 24
+        mov eax, 1
+        mov ecx, cClrBits
+        shl eax, cl
+        mov ebx, SIZEOF RGBQUAD
+        mul ebx
+        add eax, SIZEOF BITMAPINFOHEADER
+        invoke LocalAlloc, LMEM_FIXED or LMEM_ZEROINIT, eax
+        mov pbmi, eax
+    .ELSE
+        invoke LocalAlloc, LMEM_FIXED or LMEM_ZEROINIT, SIZEOF BITMAPINFOHEADER
+        mov pbmi, eax
+    .endif
+    mov esi, pbmi
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biSize, sizeof BITMAPINFOHEADER
+    mov eax, bmp.bmWidth
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biWidth, eax
+    mov eax, bmp.bmHeight
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biHeight, eax
+    mov ax, bmp.bmPlanes
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biPlanes, ax
+    mov ax, bmp.bmBitsPixel
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biBitCount, ax
+    .IF cClrBits < 24
+        mov eax, 1
+        mov ecx, cClrBits
+        shl eax, cl
+        mov (BITMAPINFO PTR [esi]).bmiHeader.biClrUsed,  eax
+    .endif
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biCompression, BI_RGB
+    mov eax, (BITMAPINFO PTR [esi]).bmiHeader.biWidth
+    mov ebx, cClrBits
+    mul ebx
+    add eax, 31
+    and eax, 0ffffffe0h ;0ffffffe0: ~31
+    mov ebx, 8
+    xor edx, edx
+    div ebx
+    mov ebx, (BITMAPINFO PTR [esi]).bmiHeader.biHeight
+    mul ebx
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biSizeImage, eax
+    mov (BITMAPINFO PTR [esi]).bmiHeader.biClrImportant, 0
+    mov eax, pbmi
+    ret
+CreateBitmapInfoStruct endp
+
+SaveBitmapFile proc USES ebx
+    LOCAL pbi:PTR
+    LOCAL hf:HANDLE
+    LOCAL hdr:BITMAPFILEHEADER
+    LOCAL pbih:PTR
+    LOCAL lpBits:LPBYTE
+    LOCAL dwTotal:DWORD
+    LOCAL cb:DWORD
+    LOCAL hp:PTR
+    LOCAL dwTmp:DWORD
+    
+    call CreateBitmapInfoStruct
+    mov pbi, eax
+    mov pbih, eax
+    mov esi, pbih
+    invoke GlobalAlloc, GMEM_FIXED, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+    mov lpBits, eax
+    invoke GetDIBits, g_hdcBuf, g_hdcBitmap, 0, (BITMAPINFOHEADER PTR [esi]).biHeight, lpBits, \
+           pbi, DIB_RGB_COLORS
+    invoke CreateFile, offset g_bitmapName, GENERIC_READ or GENERIC_WRITE, 0, NULL, \
+           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+    mov hf, eax
+    mov hdr.bfType, 4d42h
+    mov eax, (BITMAPINFOHEADER PTR [esi]).biClrUsed
+    mov ebx, SIZEOF RGBQUAD
+    mul ebx
+    add eax, SIZEOF BITMAPFILEHEADER
+    add eax, (BITMAPINFOHEADER PTR [esi]).biSize
+    mov hdr.bfOffBits, eax
+    add eax, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+    mov hdr.bfSize, eax
+    mov hdr.bfReserved1, 0
+    mov hdr.bfReserved2, 0
+    invoke WriteFile, hf, addr hdr, SIZEOF BITMAPFILEHEADER, addr dwTmp, NULL
+    mov eax, (BITMAPINFOHEADER PTR [esi]).biClrUsed
+    mov ebx, SIZEOF RGBQUAD
+    mul ebx
+    add eax, SIZEOF BITMAPINFOHEADER
+    mov ebx, eax ; Just make masm happy
+    invoke WriteFile, hf, pbih, ebx, addr dwTmp, NULL
+    mov eax, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+    mov cb, eax
+    mov eax, dwTotal
+    mov eax, lpBits
+    mov hp, eax
+    invoke WriteFile, hf, hp, cb, addr dwTmp, NULL
+    invoke CloseHandle, hf
+    invoke GlobalFree, lpBits
+    invoke LocalFree, pbi
+    ret
+SaveBitmapFile endp
+
+SaveAsBitmap proc
+    LOCAL openFileStruct:OPENFILENAME
+    LOCAL filename[MAX_FILE_NAME_SIZE]:BYTE
+    invoke crt_strcpy, addr filename, offset g_bitmapName
+    mov openFileStruct.lStructSize, SIZEOF openFileStruct
+    mov eax, g_hWnd
+    mov openFileStruct.hwndOwner, eax
+    mov openFileStruct.hInstance, NULL
+    mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
+    mov openFileStruct.lpstrCustomFilter, NULL
+    mov openFileStruct.nFilterIndex, 0
+    lea eax, filename
+    mov openFileStruct.lpstrFile, eax
+    mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
+    mov openFileStruct.lpstrFileTitle, NULL
+    mov openFileStruct.nMaxFileTitle, 0
+    mov openFileStruct.lpstrInitialDir, NULL
+    mov openFileStruct.lpstrTitle, OFFSET saveFileDialogName
+    mov openFileStruct.Flags, OFN_PATHMUSTEXIST
+    mov openFileStruct.lpstrDefExt, NULL
+    invoke GetSaveFileName, addr openFileStruct
+    .IF eax == 0
+        ret
+    .endif
+    invoke crt_strcpy, offset g_bitmapName, addr filename
+    call SaveBitmapFile
+    ret
+SaveAsBitmap endp
 
 SetCanvasColor proc index:DWORD, color:DWORD
     ; if index == 0, set `color' as foreground color
@@ -322,7 +486,37 @@ PromptColor endp
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
+    LOCAL filenameTemp[MAX_FILE_NAME_SIZE]:BYTE
+    LOCAL count:DWORD
+    LOCAL cursorPos:POINT
+    LOCAL cursorPosMsg[100]:BYTE
+    LOCAL canvasRect:RECT
+    LOCAL relativeCursorPos:POINT
+    LOCAL statusBarEdges[3]:DWORD
+    LOCAL clientRect:RECT
     
+    .IF uMsg != WM_CREATE
+    	invoke GetCursorPos, addr cursorPos
+    	invoke GetWindowRect, g_hWndCanvas, addr canvasRect
+    	mov eax, cursorPos.x
+    	sub eax, canvasRect.left
+    	mov relativeCursorPos.x, eax
+    	mov eax, cursorPos.y
+    	sub eax, canvasRect.top
+    	mov relativeCursorPos.y, eax
+    	
+    	;problems remain: can't get paper's rect
+    	mov eax, canvasRect.right
+    	mov ebx, canvasRect.bottom
+    	.IF relativeCursorPos.x <= 10000000h && cursorPos.x <= eax && relativeCursorPos.y <= 10000000h && cursorPos.y <= ebx
+    		invoke wsprintf, addr cursorPosMsg, offset coordinateFormat, relativeCursorPos.x, relativeCursorPos.y
+    		;debug
+    		;invoke crt_printf, addr cursorPosMsg
+    		invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 00000002h, addr cursorPosMsg
+        .ELSE
+        	invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 00000002h, NULL
+    	.endif
+    .endif
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
     .ELSEIF uMsg == WM_CREATE
@@ -352,21 +546,38 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         mov g_hWndCanvas, eax
         
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
+        ; ===== Create Coordinate status bar =====
+        invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
+            hWnd, NULL, g_hInst, NULL
+        mov g_hWndStatusBar, eax
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
         invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
         invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
+        invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
+        
+        invoke GetClientRect, hWnd, addr clientRect
+        mov eax, clientRect.right ;width
+        mov statusBarEdges[8], eax
+        mov ebx, eax
+        shr ebx, 2
+        sub eax, ebx
+        mov statusBarEdges[4], eax
+        sub eax, ebx
+        mov statusBarEdges[0], eax
+        invoke SendMessage, g_hWndStatusBar, SB_SETPARTS, 3, addr statusBarEdges
     .ELSEIF uMsg == WM_HOTKEY
     	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, lParam
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         .IF wParam == IDM_OPEN
-            invoke OpenOpenFileDialog, hWnd
-            .IF g_bitmapName != 0
-                invoke crt_puts, offset g_bitmapName
-                invoke LoadBitmapFromFile, g_hWndCanvas
-            .ENDIF
+            invoke OpenOpenBitmapDialog, hWnd, addr filenameTemp
+            .IF eax != 0
+                invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
+            .endif
+        .ELSEIF wParam == IDM_SAVEAS
+            call SaveAsBitmap
         .ELSEIF wParam == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF wParam == IDM_BACKGROUND_COLOR
@@ -379,37 +590,10 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         .ENDIF
         
     .ELSEIF uMsg == WM_DROPFILES
-    	invoke DragQueryFile, wParam, 0FFFFFFFFh, NULL, 0
-    	mov count, eax
-    	;debug
-    	invoke crt_printf, offset showDraggedFileNum, eax
-    	mov ecx, count
-    	mov ebx, 0
-    Loop_open_files:
-    	mov count, ecx
-    	invoke DragQueryFile, wParam, ebx, offset g_bitmapName, MAX_FILE_NAME_SIZE
-    	inc ebx
-    	invoke PathFindExtension, offset g_bitmapName
-    	mov fileSuffixPtr, eax
-    	    
-    	mov ecx, LENGTHOF suffixes
-    	mov esi, 0
-    Loop_suffixes:
-    	push ecx
-    	invoke lstrcmpi, fileSuffixPtr, suffixes[esi]
-    	.IF eax == 0
-    	    ;open file here
-    	    ;debug
-    	    ;invoke crt_printf, offset showFileToOpen
-    	    ;invoke crt_printf, offset g_bitmapName
-    	    ;invoke CreateFile, offset g_bitmapName, GENERIC_READ or GENERIC_WRITE, FILE_SHARE_DELETE or FILE_SHARE_READ or FILE_SHARE_WRITE, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL
-    	    invoke LoadBitmapFromFile, g_hWnd
-    	.endif
-    	add esi, 4
-    	pop ecx
-    	loop Loop_suffixes
-    	mov ecx, count
-        loop Loop_open_files
+    	invoke DragQueryFile, wParam, 0, addr filenameTemp, MAX_FILE_NAME_SIZE
+    	.IF eax != 0
+    	    invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
+    	.ENDIF
     .ELSEIF uMsg == WM_CLOSE
         .IF g_isModified != 0
             invoke MessageBox, hWnd, offset confirmCloseDialogText, offset confirmCloseDialogName, MB_YESNOCANCEL or MB_ICONEXCLAMATION
@@ -431,6 +615,31 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     ret
 WndProc endp
 
+CalculateOffset proc hWnd:HWND
+    LOCAL scrollbarInfo:SCROLLINFO
+    
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
+    invoke GetScrollInfo, hWnd, SB_VERT, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov edx, SCROLL_STEP_PIXEL
+    mul edx
+    mov ebx, g_zoom
+    xor edx, edx
+    div ebx
+    mov g_canvasOffsetY, eax
+    mov scrollbarInfo.cbSize, SIZEOF scrollbarInfo
+    mov scrollbarInfo.fMask, SIF_RANGE or SIF_PAGE or SIF_POS or SIF_TRACKPOS
+    invoke GetScrollInfo, hWnd, SB_HORZ, addr scrollbarInfo
+    mov eax, scrollbarInfo.nPos
+    mov edx, SCROLL_STEP_PIXEL
+    mul edx
+    mov ebx, g_zoom
+    xor edx, edx
+    div ebx
+    mov g_canvasOffsetX, eax
+    ret
+CalculateOffset endp
 
 ClearCanvas proc
     LOCAL canvasRect:RECT
