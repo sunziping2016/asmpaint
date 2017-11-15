@@ -96,11 +96,12 @@ UpdateScrollBarSize proto
 
     g_cursorInst HINSTANCE NULL
     g_cursor DWORD 0
-    
     g_isMouseDown DWORD FALSE
     
     g_previousPoint POINT <0, 0>
 
+    g_hasToolbar DWORD 1
+    g_hasStatusBar DWORD 1
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -112,6 +113,7 @@ UpdateScrollBarSize proto
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
     g_hAccel HACCEL ?
+    g_hMenu HMENU ?
     
     g_foregroundColor DWORD ?
     g_backgroundColor DWORD ?
@@ -149,33 +151,30 @@ DestoryCanvas proc
     ret
 DestoryCanvas endp
 
-CalculateCanvasWindowPosition proc USES esi, hWnd:HWND, toolbarWnd:HWND, canvasRect:PTR
-    ; Note: canvasRect.left = left pos,  canvasRect.right  = width
-    ;       canvasRect.top  = top pos,   canvasRect.bottom = height
-    LOCAL hWndRect:RECT
+UpdateCanvasWindowPosition proc
+    LOCAL rect:RECT
     LOCAL rectStatusBar:RECT
+
+    invoke GetClientRect, g_hWnd, addr rect
     
-    invoke GetClientRect, hWnd, addr hWndRect
-    invoke GetWindowRect, g_hWndStatusBar, addr rectStatusBar
+    .IF g_hasToolbar
+        add rect.left, TOOLBAR_WIDTH
+    .ENDIF
+    .IF g_hasStatusBar
+        invoke GetWindowRect, g_hWndStatusBar, addr rectStatusBar
+        mov eax, rectStatusBar.bottom
+        sub eax, rectStatusBar.top
+        sub rect.bottom, eax
+    .ENDIF
     
-    mov esi, canvasRect
-    
-    mov (RECT PTR [esi]).left, TOOLBAR_WIDTH
-    mov (RECT PTR [esi]).top, 0 
-    
-    mov eax, hWndRect.right
-    sub eax, TOOLBAR_WIDTH
-    mov (RECT PTR [esi]).right, eax
-    
-    
-    mov eax, hWndRect.bottom
-    mov edx, rectStatusBar.bottom
-    sub edx, rectStatusBar.top
-    sub eax, edx
-    mov (RECT PTR [esi]).bottom, eax
-    
+    mov ecx, rect.right
+    sub ecx, rect.left
+    mov edx, rect.bottom
+    sub edx, rect.top
+    invoke SetWindowPos, g_hWndCanvas, HWND_TOP, rect.left, rect.top, \
+        ecx, edx, SWP_SHOWWINDOW
     ret
-CalculateCanvasWindowPosition endp
+UpdateCanvasWindowPosition endp
 
 OpenOpenBitmapDialog proc USES esi, 
     hWnd:HWND, pfilename:PTR
@@ -226,7 +225,7 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     mov g_hdcBitmap, eax
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
     invoke UpdateScrollBarSize
-    invoke InvalidateRect, g_hWndCanvas, NULL, TRUE
+    invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     ret
 LoadBitmapFromFile endp
 
@@ -437,7 +436,7 @@ SetCanvasColor proc index:DWORD, color:DWORD
     invoke DeleteObject, hBmpMask
     invoke DeleteDC, hdcWnd
     
-    invoke InvalidateRect, g_hWndControl, NULL, TRUE
+    invoke InvalidateRect, g_hWndControl, NULL, FALSE
     ret 
 SetCanvasColor endp
 
@@ -536,21 +535,21 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke SendMessage, g_hWndControl, TB_ADDBUTTONS, CONTROL_BUTTON_NUM, offset g_tbControlButtons
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
         ; ===== Create Canvas Child Window =====
-        invoke CalculateCanvasWindowPosition, hWnd, g_hWndControl, addr canvasWndRect
         invoke CreateWindowEx, 0, addr canvasClassName, NULL, WS_CHILD or WS_HSCROLL or WS_VSCROLL, \
-               canvasWndRect.left, canvasWndRect.top, canvasWndRect.right, canvasWndRect.bottom, \
+               0, 0, 0, 0, \
                hWnd, NULL, g_hInst, NULL        
+        invoke UpdateCanvasWindowPosition
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
         ; ===== Create Coordinate status bar =====
         invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
             hWnd, NULL, g_hInst, NULL
         mov g_hWndStatusBar, eax
+        invoke GetMenu, hWnd
+        mov g_hMenu, eax
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
-        invoke CalculateCanvasWindowPosition, g_hWnd, g_hWndControl, addr canvasWndRect
-        invoke SetWindowPos, g_hWndCanvas, HWND_TOP, canvasWndRect.left, canvasWndRect.top, \
-               canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
         invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
+        invoke UpdateCanvasWindowPosition
         invoke UpdateStatusBarSize        
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
@@ -583,7 +582,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke CreateCanvas, g_hWndCanvas
             invoke ClearCanvas
             invoke UpdateScrollBarSize
-            invoke InvalidateRect, g_hWndCanvas, NULL, TRUE
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
             DontNewCanvas:
         .ELSEIF eax == IDM_SAVE
             .IF g_isModified != 0
@@ -598,12 +597,38 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             .IF eax != NULL
                 invoke SaveBitmapFile
             .endif
+        .ELSEIF eax == IDM_EXIT
+            invoke SendMessage, hWnd, WM_CLOSE, 0, 0
+        .ELSEIF eax == IDM_TOOLBAR
+            .IF g_hasToolbar == 0
+                invoke CheckMenuItem, g_hMenu, IDM_TOOLBAR, MF_BYCOMMAND or MF_CHECKED
+                invoke ShowWindow, g_hWndControl, SW_SHOW
+                mov eax, 1
+            .ELSE
+                invoke CheckMenuItem, g_hMenu, IDM_TOOLBAR, MF_BYCOMMAND or MF_UNCHECKED
+                invoke ShowWindow, g_hWndControl, SW_HIDE
+                mov eax, 0
+            .ENDIF
+            mov g_hasToolbar, eax
+            invoke UpdateCanvasWindowPosition
+            invoke InvalidateRect, hWnd, NULL, FALSE
+        .ELSEIF eax == IDM_STATUSBAR
+            .IF g_hasStatusBar == 0
+                invoke CheckMenuItem, g_hMenu, IDM_STATUSBAR, MF_BYCOMMAND or MF_CHECKED
+                invoke ShowWindow, g_hWndStatusBar, SW_SHOW
+                mov eax, 1
+            .ELSE
+                invoke CheckMenuItem, g_hMenu, IDM_STATUSBAR, MF_BYCOMMAND or MF_UNCHECKED
+                invoke ShowWindow, g_hWndStatusBar, SW_HIDE
+                mov eax, 0
+            .ENDIF
+            mov g_hasStatusBar, eax
+            invoke UpdateCanvasWindowPosition
+            invoke InvalidateRect, hWnd, NULL, FALSE
         .ELSEIF eax == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF eax == IDM_BACKGROUND_COLOR
             invoke PromptColor, 1
-        .ELSEIF eax == IDM_EXIT
-            invoke SendMessage, hWnd, WM_CLOSE, 0, 0
         .ELSEIF eax == IDM_ABOUT
             invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
         .ELSE
