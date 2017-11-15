@@ -94,6 +94,8 @@ UpdateScrollBarSize proto
     g_pen HPEN NULL
     g_brush HBRUSH NULL
 
+    g_cursorInst HINSTANCE NULL
+    g_cursor DWORD 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -104,10 +106,10 @@ UpdateScrollBarSize proto
     g_hImageListControl HIMAGELIST ?
     g_hdcBuf HDC ?
     g_hdcBitmap HBITMAP ?
+    g_hAccel HACCEL ?
     
     g_foregroundColor DWORD ?
     g_backgroundColor DWORD ?
-
 .code
 
 CreateCanvas proc hWnd:HWND
@@ -544,11 +546,11 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                canvasWndRect.right, canvasWndRect.bottom, SWP_SHOWWINDOW
         invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
         invoke UpdateStatusBarSize        
-    .ELSEIF uMsg == WM_HOTKEY
-    	invoke SendMessage, g_hWndControl, WM_COMMAND, wParam, 0
     .ELSEIF uMsg == WM_COMMAND
         invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
-        .IF wParam == IDM_OPEN
+        mov eax, wParam
+        movzx eax, ax
+        .IF eax == IDM_OPEN
             .IF g_isModified == 1
                 invoke ConfirmSaveModify
                 .IF eax == 0
@@ -560,7 +562,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                 invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
             .endif
             DontOpenFile:
-        .ELSEIF wParam == IDM_NEW
+        .ELSEIF eax == IDM_NEW
             .IF g_isModified == 1
                 invoke ConfirmSaveModify
                 .IF eax == 0
@@ -577,7 +579,7 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke UpdateScrollBarSize
             invoke InvalidateRect, g_hWndCanvas, NULL, TRUE
             DontNewCanvas:
-        .ELSEIF wParam == IDM_SAVE
+        .ELSEIF eax == IDM_SAVE
             .IF g_isModified != 0
                 .IF g_bitmapName == 0
                     invoke SendMessage, g_hWndControl, WM_COMMAND, IDM_SAVEAS, lParam
@@ -585,18 +587,18 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                     invoke SaveBitmapFile
                 .ENDIF
             .ENDIF
-        .ELSEIF wParam == IDM_SAVEAS
+        .ELSEIF eax == IDM_SAVEAS
             invoke OpenSaveBitmapDialog
             .IF eax != NULL
                 invoke SaveBitmapFile
             .endif
-        .ELSEIF wParam == IDM_FOREGROUND_COLOR
+        .ELSEIF eax == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
-        .ELSEIF wParam == IDM_BACKGROUND_COLOR
+        .ELSEIF eax == IDM_BACKGROUND_COLOR
             invoke PromptColor, 1
-        .ELSEIF wParam == IDM_EXIT
+        .ELSEIF eax == IDM_EXIT
             invoke SendMessage, hWnd, WM_CLOSE, 0, 0
-        .ELSEIF wParam == IDM_ABOUT
+        .ELSEIF eax == IDM_ABOUT
             invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
         .ELSE
             mov eax, wParam
@@ -935,6 +937,46 @@ CanvasTrackMouse proc
     ret
 CanvasTrackMouse endp
 
+UpdataCursor proc
+    .IF g_mouseInCanvas == 1
+        .IF g_toolbarStatus == IDM_PAINT_BARREL
+            mov edx, g_hInst
+            mov ecx, IDC_BUCKET
+        .ELSEIF g_toolbarStatus == IDM_COLOR_PICKER
+            mov edx, g_hInst
+            mov ecx, IDC_PICK
+        .ELSEIF g_toolbarStatus == IDM_MAGNIFIER
+            mov edx, g_hInst
+            mov ecx, IDC_ZOOM
+        .ELSEIF g_toolbarStatus == IDM_PENCIL
+            mov edx, g_hInst
+            mov ecx, IDC_PEN
+        .ELSEIF g_toolbarStatus == IDM_BRASH
+            mov edx, g_hInst
+            mov ecx, IDC_BRUSH
+        .ELSEIF g_toolbarStatus == IDM_AIRBRUSH
+            mov edx, g_hInst
+            mov ecx, IDC_SPRAY
+        .ELSEIF g_toolbarStatus == IDM_ERASER
+            mov edx, NULL
+            mov ecx, IDC_ARROW
+        .ELSE
+            mov edx, g_hInst
+            mov ecx, IDC_SELECT
+        .ENDIF
+    .ELSE
+        mov edx, NULL
+        mov ecx, IDC_ARROW
+    .ENDIF
+    .IF g_cursorInst != edx || g_cursor != ecx
+        mov g_cursorInst, edx
+        mov g_cursor, ecx
+        invoke LoadCursor, g_cursorInst, g_cursor
+        invoke SetCursor, eax
+    .ENDIF
+    ret
+UpdataCursor endp
+
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 
@@ -1000,10 +1042,14 @@ CanvasWinProc proc USES ebx esi,
         invoke CanvasTrackMouse
         invoke UpdateMousePos
         invoke UpdateStatusBarMouseCoordinate
+        invoke UpdataCursor
     .ELSEIF uMsg == WM_MOUSELEAVE
         mov g_mouseInCanvas, 0
         mov g_mouseTracking, 0
         invoke UpdateStatusBarMouseCoordinate
+        invoke UpdataCursor
+    .ELSEIF uMsg == WM_SETCURSOR
+        invoke UpdataCursor
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
@@ -1062,16 +1108,18 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     
     invoke ShowWindow, g_hWnd, cmdShow
     invoke UpdateWindow, g_hWnd
-    
-    invoke RegisterHotKey, g_hWnd, IDM_NEW, MOD_CONTROL or MOD_NOREPEAT, 'N'
-    invoke RegisterHotKey, g_hWnd, IDM_OPEN, MOD_CONTROL or MOD_NOREPEAT, 'O'
-    invoke RegisterHotKey, g_hWnd, IDM_SAVE, MOD_CONTROL or MOD_NOREPEAT, 'S'
+
+    invoke LoadAccelerators, g_hInst, IDR_ACL
+    mov g_hAccel, eax 
 
     .WHILE TRUE
-        invoke GetMessage, ADDR msg, NULL, 0, 0
+        invoke GetMessage, addr msg, NULL, 0, 0
         .BREAK .IF !eax
-        invoke TranslateMessage, ADDR msg
-        invoke DispatchMessage, ADDR msg
+        invoke TranslateAccelerator, g_hWnd, g_hAccel, addr msg
+        .IF eax == 0
+            invoke TranslateMessage, addr msg
+            invoke DispatchMessage, addr msg
+        .ENDIF
     .ENDW
 
     mov eax,msg.wParam
