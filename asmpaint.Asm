@@ -5,6 +5,13 @@ include asmpaint.Inc
 
 UpdateScrollBarSize proto
 
+UndoRedo struct
+    hBitmap HBITMAP ?
+    isModified DWORD ?
+    nWidth DWORD ?
+    nHeight DWORD ?
+UndoRedo ends
+
 .data
     className BYTE "AsmPaintClass",0
     canvasClassName BYTE "AsmPaintCanvasClass",0
@@ -107,7 +114,7 @@ UpdateScrollBarSize proto
     g_hasStatusBar DWORD 1
     
     g_undoRedoCurr DWORD 0
-    g_undoRedoTail DWORD 0
+    g_undoRedoSize DWORD 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -126,24 +133,76 @@ UpdateScrollBarSize proto
     
     g_foregroundColor DWORD ?
     g_backgroundColor DWORD ?
-    
-    g_undoRedo HBITMAP UNDO_MAX_TIMES dup(?)
+
+    g_undoRedo UndoRedo UNDO_MAX_TIMES dup(<?, ?>)
 
 .code
+
+MakeBitmapCopy proc, hOldDC:HDC, nWidth:DWORD, nHeight:DWORD
+    LOCAL hdc:HDC
+    LOCAL hNewDC:HDC
+    LOCAL hNewBitmap:HBITMAP
+    invoke GetDC, g_hWnd
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov hNewDC, eax
+    invoke CreateCompatibleBitmap, hdc, nWidth, nHeight
+    mov hNewBitmap, eax
+    invoke ReleaseDC, g_hWnd, hdc
+    invoke BitBlt, hNewDC, 0, 0, nWidth, nHeight, HDC, 0, 0, SRCCOPY
+    invoke DeleteDC, hNewDC
+    mov eax, hNewBitmap
+    ret
+MakeBitmapCopy endp
+
+PopUndoRedo proc
+    invoke DeleteObject, g_undoRedo.hBitmap
+    dec g_undoRedoSize
+    lea ecx, [g_undoRedo + sizeof UndoRedo]
+    mov eax, g_undoRedoSize
+    mov edx, sizeof UndoRedo
+    mul edx
+    invoke crt_memmove, addr g_undoRedo, ecx, eax
+    ret
+PopUndoRedo endp
+
 ClearUndoRedo proc
+    .WHILE g_undoRedoSize != 0
+        invoke PopUndoRedo
+    .ENDW
+    mov g_undoRedoCurr, 0
     ret
 ClearUndoRedo endp
 
+LoadUndoRedo proc
+    ret
+LoadUndoRedo endp
+
 Undo proc
-    
+    .IF g_undoRedoCurr > 0
+        dec g_undoRedoCurr
+        invoke LoadUndoRedo
+        mov eax, 1     
+    .ELSE
+        xor eax, eax
+    .ENDIF
     ret
 Undo endp
 
 Redo proc
+    mov eax, g_undoRedoCurr
+    inc eax
+    .IF eax < g_undoRedoSize
+        inc g_undoRedoCurr
+        invoke LoadUndoRedo
+        mov eax, 1     
+    .ELSE
+        xor eax, eax
+    .ENDIF
     ret
 Redo endp
 
-SaveUndoRedo proc hdc:HDC, hBitmap:HBITMAP
+SaveUndoRedo proc hdc:HDC
     ret
 SaveUndoRedo endp
 
