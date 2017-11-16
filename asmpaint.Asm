@@ -46,6 +46,9 @@ UndoRedo ends
     openFileDialogName BYTE "打开", 0
     openFileFilterPattern BYTE "位图文件 (*.bmp)", 0, "*.bmp", 0, 0
     
+    cannotOpenFileDialogText BYTE "无法打开该文件", 0
+    cannotOpenFileDialogTitle BYTE "画图", 0
+    
     confirmCloseDialogText BYTE "将更改保存到文件吗？", 0
     confirmCloseDialogName BYTE "画图", 0
     coordinateFormat BYTE "%d, %d", 0
@@ -206,32 +209,61 @@ SaveUndoRedo proc hdc:HDC
     ret
 SaveUndoRedo endp
 
+RestoreHdcBuffer proc
+    invoke BitBlt, g_hdcBuf, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcDrawingBuf, 0, 0, SRCCOPY
+    ret
+RestoreHdcBuffer endp
 
 StartDrawing proc
     
-    
+    mov g_isDrawing, TRUE
+    invoke CreateCompatibleDC, g_hdcBuf
+    mov g_hdcDrawingBuf, eax
+    invoke CreateCompatibleBitmap, g_hdcBuf, g_canvasWidth, g_canvasHeight
+    mov g_hdcDrawingBitmap, eax
+    invoke SelectObject, g_hdcDrawingBuf, g_hdcDrawingBitmap
+    invoke BitBlt, g_hdcDrawingBuf, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcBuf, 0, 0, SRCCOPY
     ret
 StartDrawing endp
 
 StopDrawing proc applyChange:DWORD ;Bool
     
-    
+    .IF applyChange == TRUE
+        mov g_isModified, TRUE
+        invoke SaveUndoRedo, g_hdcBuf, g_hdcBitmap
+    .ELSE
+        invoke RestoreHdcBuffer
+    .ENDIF
+    invoke DeleteObject, g_hdcDrawingBitmap
+    invoke DeleteDC, g_hdcDrawingBuf
+    invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    mov g_isDrawing, FALSE
     ret
 StopDrawing endp
 
 StartCapture proc
-    
-    
+    mov g_isMouseDown, TRUE
+    invoke SetCapture, g_hWndCanvas
     ret
 StartCapture endp
 
 StopCapture proc
-    
-    
+    mov g_isMouseDown, FALSE
+    invoke ReleaseCapture
     ret
 StopCapture endp
 
-
+IsSamePoint proc point1X:DWORD, point1Y:DWORD, point2X:DWORD, point2Y:DWORD
+    mov eax, FALSE
+    mov edx, point1X
+    .IF edx == point2X
+        mov edx, point1Y
+        .IF edx == point2Y
+            mov eax, TRUE
+        .ENDIF
+    .ENDIF
+    ret
+IsSamePoint endp
 
 CreateCanvas proc hWnd:HWND
     LOCAL hdc: HDC
@@ -322,6 +354,7 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     invoke LoadImage, NULL, pfilename, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE
     mov bitmapHandle, eax
     .IF eax == NULL
+        invoke MessageBox, g_hWnd, offset cannotOpenFileDialogText, offset cannotOpenFileDialogTitle, MB_OK or MB_ICONEXCLAMATION
         ret
     .endif
     invoke crt_strcpy, offset g_bitmapName, pfilename
@@ -1136,10 +1169,25 @@ UpdateCursor proc
 UpdateCursor endp
 
 HandleLButtonDownMessage proc wParam:WPARAM
-    invoke SetCapture, g_hWndCanvas
-    mov g_isDrawing, TRUE
+    invoke StartCapture
     .IF g_toolbarStatus == IDM_PENCIL
-        ; TODO: save current bitmap
+        invoke StartDrawing
+        invoke SetPen, g_hdcBuf
+        
+        .IF g_penWidth == 1
+            invoke SetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, g_foregroundColor
+        .ELSE
+            invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
+            invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        .ENDIF
+        
+        mov eax, g_mouseCanvasX
+        mov g_previousPoint.x, eax
+        mov eax, g_mouseCanvasY
+        mov g_previousPoint.y, eax
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
+        invoke StartDrawing
         invoke SetPen, g_hdcBuf
         invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
         invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
@@ -1148,8 +1196,6 @@ HandleLButtonDownMessage proc wParam:WPARAM
         mov eax, g_mouseCanvasY
         mov g_previousPoint.y, eax
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
-    .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
-        
     .ENDIF
     ret
 HandleLButtonDownMessage endp
@@ -1163,20 +1209,31 @@ HandleMouseMoveMessage proc wParam:WPARAM
         mov eax, g_mouseCanvasY
         mov g_previousPoint.y, eax
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
+        invoke RestoreHdcBuffer
+        invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
+        invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ENDIF
     ret
 HandleMouseMoveMessage endp
 
 HandleLButtonUpMessage proc wParam:WPARAM
     invoke ReleaseCapture
-    mov g_isDrawing, FALSE
     invoke UpdateCursor
     .IF g_toolbarStatus == IDM_PENCIL
         invoke DeletePen
-        mov g_isModified, TRUE
-        mov g_isDrawing, FALSE
+        invoke StopDrawing, TRUE
+    .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
+        invoke DeletePen
+        invoke IsSamePoint, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+        .IF eax == TRUE
+            invoke StopDrawing, FALSE
+        .ELSE
+            invoke StopDrawing, TRUE
+        .ENDIF
     .ENDIF
-    invoke ReleaseCapture
+    invoke StopCapture
     ret
 HandleLButtonUpMessage endp
 
@@ -1243,7 +1300,6 @@ CanvasWinProc proc USES ebx esi,
         invoke Render, hWnd
     .ELSEIF uMsg == WM_LBUTTONDOWN
         .IF g_mouseInCanvas
-            mov g_isMouseDown, TRUE
             invoke HandleLButtonDownMessage, wParam
         .ENDIF
     .ELSEIF uMsg == WM_MOUSEMOVE
@@ -1257,7 +1313,6 @@ CanvasWinProc proc USES ebx esi,
     .ELSEIF uMsg == WM_LBUTTONUP
         .IF g_isMouseDown == TRUE
             invoke HandleLButtonUpMessage, wParam
-            mov g_isMouseDown, FALSE
         .ENDIF
     .ELSEIF uMsg == WM_MOUSELEAVE
         mov g_mouseInCanvas, 0
@@ -1266,6 +1321,7 @@ CanvasWinProc proc USES ebx esi,
         invoke UpdateCursor
     .ELSEIF uMsg == WM_SETCURSOR
         invoke UpdateCursor
+    .ELSEIF uMsg == WM_ERASEBKGND
     .ELSE
         invoke DefWindowProc, hWnd, uMsg, wParam, lParam
         ret
