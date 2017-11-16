@@ -46,7 +46,7 @@ UndoRedo ends
 
     openFileDialogName BYTE "打开", 0
     openFileFilterPattern BYTE "位图文件 (*.bmp)", 0, "*.bmp", 0, 0
-    
+
     cannotOpenFileDialogText BYTE "无法打开该文件", 0
     cannotOpenFileDialogTitle BYTE "画图", 0
     
@@ -59,11 +59,11 @@ UndoRedo ends
     
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
-    MAX_COORDINATE_BUFFER equ 50
 
     saveFileDialogName BYTE "另存为", 0
+    defaultSaveAsName BYTE "无标题.bmp", 0
     g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(0)
-    defaultSaveAsName BYTE "untitle.bmp", 0
+    g_title BYTE "无标题", MAX_FILE_NAME_SIZE dup(0)
 
     DEFAULT_CANVAS_WIDTH equ 800
     DEFAULT_CANVAS_HEIGHT equ 600
@@ -81,13 +81,13 @@ UndoRedo ends
     STATUSBAR_INFO_MINWIDTH equ 520
     STATUSBAR_COORDINATES_WIDTH equ 120
     STATUSBAR_ENDING_WIDTH equ 24
-    UNDO_MAX_TIMES equ 10
+    UNDO_MAX_TIMES equ 20
 
     debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
     debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
     debugPrintInt BYTE "%d", 0ah, 0
-    
-    g_toolbarStatus DWORD IDM_PENCIL ;default to IDM_PENCIL
+
+    g_toolbarStatus DWORD IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
     g_isModified DWORD 0
 
@@ -123,10 +123,7 @@ UndoRedo ends
     g_hasStatusBar DWORD 1
     
     g_undoRedoCurr DWORD 0
-    g_undoRedoSize DWORD 0
-    
-    debugSave BYTE "save: #%d (total: %d)", 0ah, 0
-    debugLoad BYTE "load: #%d (total: %d)", 0ah, 0
+    g_undoRedoSize DWORD 0    
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -147,7 +144,7 @@ UndoRedo ends
     g_backgroundColor DWORD ?
 
     g_undoRedo UndoRedo UNDO_MAX_TIMES dup(<?, ?>)
-
+    g_textBuffer BYTE 1024 dup(?)
 .code
 
 RemoveUndoRedo proc uses esi edi, index:DWORD
@@ -196,7 +193,6 @@ LoadUndoRedoCurr proc uses esi
     mov g_hdcDrawingBitmap, eax
     mov eax, (UndoRedo ptr [esi]).isModified
     mov g_isModified, eax
-    invoke crt_printf, offset debugPrintInt, g_hdcDrawingBitmap
     invoke SelectObject, g_hdcDrawingBuf, g_hdcDrawingBitmap
     mov ecx, (UndoRedo ptr [esi]).nWidth
     mov edx, (UndoRedo ptr [esi]).nHeight
@@ -211,9 +207,24 @@ LoadUndoRedoCurr proc uses esi
         invoke ReleaseDC, g_hWnd, hdc
         invoke SelectObject, g_hdcBuf, g_hdcBitmap
     .ENDIF
-    invoke crt_printf, offset debugLoad, g_undoRedoCurr, g_undoRedoSize
     ret
 LoadUndoRedoCurr endp
+
+UpdateUndoRedoMenu proc
+    .IF g_undoRedoCurr > 0
+        invoke EnableMenuItem, g_hMenu, IDM_UNDO, MF_BYCOMMAND or MF_ENABLED
+    .ELSEIF
+        invoke EnableMenuItem, g_hMenu, IDM_UNDO, MF_BYCOMMAND or MF_GRAYED
+    .ENDIF
+    mov eax, g_undoRedoCurr
+    inc eax
+    .IF eax < g_undoRedoSize
+        invoke EnableMenuItem, g_hMenu, IDM_REDO, MF_BYCOMMAND or MF_ENABLED
+    .ELSEIF
+        invoke EnableMenuItem, g_hMenu, IDM_REDO, MF_BYCOMMAND or MF_GRAYED
+    .ENDIF
+    ret
+UpdateUndoRedoMenu endp
 
 MakeBitmapCopy proc, hdc:HDC, nWidth:DWORD, nHeight:DWORD
     LOCAL hWinDC:HDC
@@ -256,13 +267,12 @@ SaveUndoRedo proc uses ebx
     mov eax, g_canvasHeight
     mov (UndoRedo ptr [ebx]).nHeight, eax
     mov eax, g_undoRedoSize
-    invoke crt_printf, offset debugPrintInt, (UndoRedo ptr [ebx]).hBitmap
     .IF g_undoRedoSize != 0
         inc g_undoRedoCurr
     .ENDIF
     inc g_undoRedoSize
-    invoke crt_printf, offset debugSave, g_undoRedoCurr, g_undoRedoSize
     invoke LoadUndoRedoCurr
+    invoke UpdateUndoRedoMenu
     ret
 SaveUndoRedo endp
 
@@ -299,6 +309,7 @@ Undo proc
         invoke LoadUndoRedoCurr
         invoke RestoreHdcBuffer
         mov eax, 1
+        invoke UpdateUndoRedoMenu
     .ELSE
         xor eax, eax
     .ENDIF
@@ -312,7 +323,8 @@ Redo proc
         inc g_undoRedoCurr
         invoke LoadUndoRedoCurr
         invoke RestoreHdcBuffer
-        mov eax, 1     
+        mov eax, 1
+        invoke UpdateUndoRedoMenu
     .ELSE
         xor eax, eax
     .ENDIF
@@ -590,11 +602,10 @@ SaveBitmapFile endp
 ; return 1 if success, NULL if user cancels
 OpenSaveBitmapDialog proc
     LOCAL openFileStruct:OPENFILENAME
-    LOCAL filename[MAX_FILE_NAME_SIZE]:BYTE
     .IF g_bitmapName == 0
-        invoke crt_strcpy, addr filename, offset defaultSaveAsName
+        invoke crt_strcpy, addr g_textBuffer, offset defaultSaveAsName
     .ELSE
-        invoke crt_strcpy, addr filename, offset g_bitmapName
+        invoke crt_strcpy, addr g_textBuffer, offset g_bitmapName
     .ENDIF
     mov openFileStruct.lStructSize, SIZEOF openFileStruct
     mov eax, g_hWnd
@@ -603,7 +614,7 @@ OpenSaveBitmapDialog proc
     mov openFileStruct.lpstrFilter, OFFSET openFileFilterPattern
     mov openFileStruct.lpstrCustomFilter, NULL
     mov openFileStruct.nFilterIndex, 0
-    lea eax, filename
+    lea eax, g_textBuffer
     mov openFileStruct.lpstrFile, eax
     mov openFileStruct.nMaxFile, MAX_FILE_NAME_SIZE
     mov openFileStruct.lpstrFileTitle, NULL
@@ -614,7 +625,7 @@ OpenSaveBitmapDialog proc
     mov openFileStruct.lpstrDefExt, NULL
     invoke GetSaveFileName, addr openFileStruct
     .IF eax != NULL
-        invoke crt_strcpy, offset g_bitmapName, addr filename
+        invoke crt_strcpy, offset g_bitmapName, addr g_textBuffer
         mov eax, 1
     .endif
     ret
@@ -673,7 +684,7 @@ SetCanvasColor proc index:DWORD, color:DWORD
     invoke DeleteDC, hdcWnd
     
     invoke InvalidateRect, g_hWndControl, NULL, FALSE
-    ret 
+    ret
 SetCanvasColor endp
 
 PromptColor proc, index: DWORD
@@ -742,7 +753,7 @@ UpdateStatusBarSize proc
     ret
 UpdateStatusBarSize endp
 
-WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
+WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
     LOCAL filenameTemp[MAX_FILE_NAME_SIZE]:BYTE
@@ -752,6 +763,12 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_CREATE
         mov eax, hWnd
         mov g_hWnd, eax
+        ; ===== Create Coordinate status bar =====
+        invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
+            hWnd, NULL, g_hInst, NULL
+        mov g_hWndStatusBar, eax
+        invoke GetMenu, hWnd
+        mov g_hMenu, eax
         ; ==== Create Left Control Toolbar ====
         invoke CreateWindowEx, 0, addr toolbarClassName, NULL, \
             CCS_VERT or CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS, 0, 0, 0, 0, \
@@ -776,12 +793,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                hWnd, NULL, g_hInst, NULL        
         invoke UpdateCanvasWindowPosition
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
-        ; ===== Create Coordinate status bar =====
-        invoke CreateWindowEx, 0, addr statusBarClassName, NULL, WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, \
-            hWnd, NULL, g_hInst, NULL
-        mov g_hWndStatusBar, eax
-        invoke GetMenu, hWnd
-        mov g_hMenu, eax
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
         invoke SendMessage, g_hWndStatusBar, WM_SIZE, 0, 0
@@ -834,13 +845,17 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                 invoke SaveBitmapFile
             .endif
         .ELSEIF eax == IDM_UNDO
-            invoke Undo
-            invoke UpdateScrollBarSize
-            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+            .IF g_isDrawing == 0
+                invoke Undo
+                invoke UpdateScrollBarSize
+                invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+            .ENDIF
         .ELSEIF eax == IDM_REDO
-            invoke Redo
-            invoke UpdateScrollBarSize
-            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+            .IF g_isDrawing == 0
+                invoke Redo
+                invoke UpdateScrollBarSize
+                invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+            .ENDIF
         .ELSEIF eax == IDM_EXIT
             invoke SendMessage, hWnd, WM_CLOSE, 0, 0
         .ELSEIF eax == IDM_TOOLBAR
@@ -870,8 +885,11 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke UpdateCanvasWindowPosition
             invoke InvalidateRect, hWnd, NULL, FALSE
         .ELSEIF eax == IDM_CLEAR
-            invoke ClearCanvas
-            invoke InvalidateRect, hWnd, NULL, FALSE
+            .IF g_isDrawing == 0
+                invoke ClearCanvas
+                invoke SaveUndoRedo
+                invoke InvalidateRect, hWnd, NULL, FALSE
+            .ENDIF
         .ELSEIF eax == IDM_FOREGROUND_COLOR
             invoke PromptColor, 0
         .ELSEIF eax == IDM_BACKGROUND_COLOR
@@ -944,7 +962,6 @@ UpdateMousePos proc
     mov g_mouseCanvasY, eax
     mov ecx, g_canvasWidth
     mov edx, g_canvasHeight
-    ;invoke crt_printf, offset debugPoint, g_mouseCanvasX, g_mouseCanvasY
     .IF g_mouseCanvasX >= 0 && g_mouseCanvasX < ecx && g_mouseCanvasY >= 0 && g_mouseCanvasY < edx
         mov g_mouseInCanvas, 1
     .ELSE
@@ -954,14 +971,13 @@ UpdateMousePos proc
 UpdateMousePos endp
 
 UpdateStatusBarMouseCoordinate proc
-    LOCAL buffer[MAX_COORDINATE_BUFFER]:BYTE
     .IF g_mouseInCanvas != 0
-        invoke crt_sprintf, addr buffer, offset coordinateFormat, g_mouseCanvasX, g_mouseCanvasY
+        invoke crt_sprintf, addr g_textBuffer, offset coordinateFormat, g_mouseCanvasX, g_mouseCanvasY
     .ELSE
         mov al, 0
-        mov buffer, al
+        mov g_textBuffer, al
     .ENDIF
-    invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 1, addr buffer
+    invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 1, addr g_textBuffer
     ret
 UpdateStatusBarMouseCoordinate endp
 
