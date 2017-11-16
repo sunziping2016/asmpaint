@@ -109,7 +109,7 @@ UndoRedo ends
 
     g_cursorInst HINSTANCE NULL
     g_cursor DWORD 0
-    g_isMouseDown DWORD FALSE
+    g_isCapturing DWORD FALSE
     g_isDrawing DWORD FALSE
     
     g_previousPoint POINT <0, 0>
@@ -333,13 +333,13 @@ StopDrawing proc applyChange:DWORD ;Bool
 StopDrawing endp
 
 StartCapture proc
-    mov g_isMouseDown, TRUE
+    mov g_isCapturing, TRUE
     invoke SetCapture, g_hWndCanvas
     ret
 StartCapture endp
 
 StopCapture proc
-    mov g_isMouseDown, FALSE
+    mov g_isCapturing, FALSE
     invoke ReleaseCapture
     invoke UpdateCursor
     ret
@@ -357,6 +357,30 @@ IsSamePoint proc point1X:DWORD, point1Y:DWORD, point2X:DWORD, point2Y:DWORD
     ret
 IsSamePoint endp
 
+IsSameRowOrColumn proc point1X:DWORD, point1Y:DWORD, point2X:DWORD, point2Y:DWORD
+    
+    mov eax, point1X
+    mov edx, point1Y
+    .IF eax == point2X || ebx == point2Y
+        mov eax, TRUE
+    .ELSE
+        mov eax, FALSE
+    .ENDIF
+    ret
+IsSameRowOrColumn endp
+
+CreateCanvas proc hWnd:HWND
+    LOCAL hdc: HDC
+    invoke GetDC, hWnd
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov g_hdcBuf, eax
+    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
+    mov g_hdcBitmap, eax
+    invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    invoke ReleaseDC, hWnd, hdc
+    ret
+CreateCanvas endp
 
 UpdateCanvasWindowPosition proc
     LOCAL rect:RECT
@@ -1072,7 +1096,7 @@ SetPen endp
 
 SetBrush proc hdc:HDC
     .IF g_fillType == FILL_WITHOUT_BORDER
-        invoke CreatePen, PS_NULL, g_penWidth, g_foregroundColor
+        invoke GetStockObject, NULL_PEN
         mov g_pen, eax
     .ELSE
         invoke CreatePen, PS_SOLID, g_penWidth, g_foregroundColor
@@ -1080,7 +1104,6 @@ SetBrush proc hdc:HDC
     .ENDIF
     
     .IF g_fillType == FILL_WITHOUT_FILL
-        invoke crt_printf, offset debugPrintInt, 22222
         invoke GetStockObject, NULL_BRUSH
         mov g_brush, eax
     .ELSE
@@ -1195,7 +1218,7 @@ CanvasTrackMouse proc
 CanvasTrackMouse endp
 
 UpdateCursor proc
-    .IF g_isMouseDown == FALSE
+    .IF g_isCapturing == FALSE
         .IF g_mouseInCanvas == 1
             .IF g_toolbarStatus == IDM_PAINT_BARREL
                 mov edx, g_hInst
@@ -1236,51 +1259,128 @@ UpdateCursor proc
     ret
 UpdateCursor endp
 
+SaveCurrentPos proc Uses esi, posX:DWORD, posY:DWORD, point:PTR
+    mov esi, point
+    mov eax, posX
+    mov (POINT PTR [esi]).x, eax
+    mov eax, posY
+    mov (POINT PTR [esi]).y, eax
+    ret
+SaveCurrentPos endp
+
+FillWithBarrel proc fillColor:DWORD
+    LOCAL crFill:DWORD
+    LOCAL barrelBrush:DWORD
+    invoke GetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+    mov crFill, eax
+    invoke CreateSolidBrush, fillColor
+    mov barrelBrush, eax
+    invoke SelectObject, g_hdcBuf, barrelBrush
+    invoke ExtFloodFill, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, crFill, FLOODFILLSURFACE
+    invoke DeleteObject, barrelBrush
+    ret
+FillWithBarrel endp
+
+CalculateSquare proc USES esi,
+    x1:SDWORD, y1:SDWORD, x2:SDWORD, y2:SDWORD, newX2:PTR, newY2:PTR
+    ; eax: width
+    mov eax, x2
+    sub eax, x1
+    .IF SDWORD PTR eax < 0
+        neg eax
+    .endif
+    ; edx: height
+    mov edx, y2
+    sub edx, y1
+    .IF SDWORD PTR edx < 0
+        neg edx
+    .endif
+    .IF eax < edx
+        mov edx, y1
+        .IF y2 < edx
+            sub edx, eax
+        .ELSE
+            add edx, eax
+        .ENDIF
+        mov eax, x2
+    .ELSE
+        mov eax, x1
+        .IF x2 < eax
+            sub eax, edx
+        .ELSE
+            add eax, edx
+        .ENDIF
+        mov edx, y2
+    .endif
+    mov esi, newX2
+    mov (SDWORD PTR [esi]), eax
+    mov esi, newY2
+    mov (SDWORD PTR [esi]), edx
+    ret
+CalculateSquare endp
+
 HandleLButtonDownMessage proc wParam:WPARAM
     invoke StartCapture
     .IF g_toolbarStatus == IDM_PENCIL
         invoke StartDrawing
         invoke SetPen, g_hdcBuf
-        
         .IF g_penWidth == 1
             invoke SetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, g_foregroundColor
         .ELSE
             invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
             invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
         .ENDIF
-        
-        mov eax, g_mouseCanvasX
-        mov g_previousPoint.x, eax
-        mov eax, g_mouseCanvasY
-        mov g_previousPoint.y, eax
+        invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
         invoke StartDrawing
         invoke SetPen, g_hdcBuf
-        invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
-        invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
-        mov eax, g_mouseCanvasX
-        mov g_previousPoint.x, eax
-        mov eax, g_mouseCanvasY
-        mov g_previousPoint.y, eax
+        invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
+    .ELSEIF g_toolbarStatus == IDM_RECTANGLE
+        invoke StartDrawing
+        invoke SetBrush, g_hdcBuf
+        invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
+    .ELSEIF g_toolbarStatus == IDM_COLOR_PICKER
+        invoke GetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        invoke SetCanvasColor, 0, eax
+    .ELSEIF g_toolbarStatus == IDM_PAINT_BARREL
+        invoke StartDrawing
+        invoke FillWithBarrel, g_foregroundColor
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        invoke StopDrawing, TRUE
     .ENDIF
     ret
 HandleLButtonDownMessage endp
 
 HandleMouseMoveMessage proc wParam:WPARAM
+    LOCAL x2:SDWORD
+    LOCAL y2:SDWORD
     .IF g_toolbarStatus == IDM_PENCIL
         invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
         invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
-        mov eax, g_mouseCanvasX
-        mov g_previousPoint.x, eax
-        mov eax, g_mouseCanvasY
-        mov g_previousPoint.y, eax
+        invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
         invoke RestoreHdcBuffer
-        invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
-        invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        invoke IsSamePoint, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+        .IF eax == FALSE
+            invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
+            invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        .ENDIF
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ELSEIF g_toolbarStatus == IDM_RECTANGLE
+        invoke RestoreHdcBuffer
+        invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+        .IF eax == FALSE
+            mov eax, wParam
+            and eax, MK_SHIFT
+            .IF eax == 0
+                invoke Rectangle, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+            .ELSE
+                invoke CalculateSquare, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY, addr x2, addr y2
+                invoke Rectangle, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, x2, y2
+            .ENDIF
+        .endif
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ENDIF
     ret
@@ -1300,6 +1400,14 @@ HandleLButtonUpMessage proc wParam:WPARAM
         .ELSE
             invoke StopDrawing, TRUE
         .ENDIF
+    .ELSEIF g_toolbarStatus == IDM_RECTANGLE
+        invoke DeleteBrush
+        invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+        .IF eax == TRUE
+            invoke StopDrawing, FALSE
+        .ELSE
+            invoke StopDrawing, TRUE
+        .endif
     .ENDIF
     invoke StopCapture
     ret
@@ -1374,11 +1482,11 @@ CanvasWinProc proc USES ebx esi,
         invoke UpdateMousePos
         invoke UpdateStatusBarMouseCoordinate
         invoke UpdateCursor
-        .IF g_isMouseDown == TRUE
+        .IF g_isCapturing == TRUE
             invoke HandleMouseMoveMessage, wParam
         .ENDIF
     .ELSEIF uMsg == WM_LBUTTONUP
-        .IF g_isMouseDown == TRUE
+        .IF g_isCapturing == TRUE
             invoke HandleLButtonUpMessage, wParam
         .ENDIF
     .ELSEIF uMsg == WM_MOUSELEAVE
