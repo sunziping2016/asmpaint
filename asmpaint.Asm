@@ -4,6 +4,7 @@
 include asmpaint.Inc
 
 UpdateScrollBarSize proto
+UpdateCursor proto
 
 UndoRedo struct
     hBitmap HBITMAP ?
@@ -118,6 +119,9 @@ UndoRedo ends
     
     g_undoRedoCurr DWORD 0
     g_undoRedoSize DWORD 0
+    
+    debugSave BYTE "save: #%d (total: %d)", 0ah, 0
+    debugLoad BYTE "load: #%d (total: %d)", 0ah, 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -130,7 +134,7 @@ UndoRedo ends
     g_hdcBitmap HBITMAP ?
     g_hAccel HACCEL ?
     g_hMenu HMENU ?
-    
+
     g_hdcDrawingBuf HDC ?
     g_hdcDrawingBitmap HBITMAP ?
     
@@ -141,51 +145,155 @@ UndoRedo ends
 
 .code
 
-MakeBitmapCopy proc, hOldDC:HDC, nWidth:DWORD, nHeight:DWORD
+RemoveUndoRedo proc uses esi edi, index:DWORD
+    ; index should be in [0, g_undoRedoSize), assert g_undoRedoSize >= 1
+    mov eax, index
+    mov edx, sizeof UndoRedo
+    mul edx
+    lea edi, [g_undoRedo + eax]
+    invoke DeleteObject, (UndoRedo ptr [edi]).hBitmap
+    lea esi, [edi + sizeof UndoRedo]
+    dec g_undoRedoSize
+    mov eax, g_undoRedoSize
+    sub eax, index
+    .IF eax != 0
+        mov edx, sizeof UndoRedo
+        mul edx
+        invoke crt_memmove, edi, esi, eax
+    .ENDIF
+    ret
+RemoveUndoRedo endp
+
+ClearUndoRedo proc
+    .IF g_undoRedoSize != 0
+        .WHILE g_undoRedoSize != 0
+            invoke RemoveUndoRedo, 0
+        .ENDW
+        mov g_undoRedoCurr, 0
+        invoke DeleteObject, g_hdcBitmap
+    .ENDIF
+    ret
+ClearUndoRedo endp
+
+RestoreHdcBuffer proc
+    invoke BitBlt, g_hdcBuf, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcDrawingBuf, 0, 0, SRCCOPY
+    ret
+RestoreHdcBuffer endp
+
+LoadUndoRedoCurr proc uses esi
     LOCAL hdc:HDC
+
+    mov eax, g_undoRedoCurr
+    mov edx, sizeof UndoRedo
+    mul edx
+    lea esi, [g_undoRedo + eax]
+    mov eax, (UndoRedo ptr [esi]).hBitmap
+    mov g_hdcDrawingBitmap, eax
+    mov eax, (UndoRedo ptr [esi]).isModified
+    mov g_isModified, eax
+    invoke crt_printf, offset debugPrintInt, g_hdcDrawingBitmap
+    invoke SelectObject, g_hdcDrawingBuf, g_hdcDrawingBitmap
+    mov ecx, (UndoRedo ptr [esi]).nWidth
+    mov edx, (UndoRedo ptr [esi]).nHeight
+    .IF g_canvasWidth != ecx || g_canvasHeight != edx
+        mov g_canvasWidth, ecx
+        mov g_canvasHeight, edx
+        invoke DeleteObject, g_hdcBitmap
+        invoke GetDC, g_hWnd
+        mov hdc, eax
+        invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
+        mov g_hdcDrawingBitmap, eax
+        invoke ReleaseDC, g_hWnd, hdc
+        invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    .ENDIF
+    invoke crt_printf, offset debugLoad, g_undoRedoCurr, g_undoRedoSize
+    ret
+LoadUndoRedoCurr endp
+
+MakeBitmapCopy proc, hdc:HDC, nWidth:DWORD, nHeight:DWORD
+    LOCAL hWinDC:HDC
     LOCAL hNewDC:HDC
     LOCAL hNewBitmap:HBITMAP
     invoke GetDC, g_hWnd
-    mov hdc, eax
-    invoke CreateCompatibleDC, hdc
+    mov hWinDC, eax
+    invoke CreateCompatibleDC, hWinDC
     mov hNewDC, eax
-    invoke CreateCompatibleBitmap, hdc, nWidth, nHeight
+    invoke CreateCompatibleBitmap, hWinDC, nWidth, nHeight
     mov hNewBitmap, eax
-    invoke ReleaseDC, g_hWnd, hdc
-    invoke BitBlt, hNewDC, 0, 0, nWidth, nHeight, HDC, 0, 0, SRCCOPY
+    invoke ReleaseDC, g_hWnd, hWinDC
+    invoke SelectObject, hNewDC, hNewBitmap
+    invoke BitBlt, hNewDC, 0, 0, nWidth, nHeight, hdc, 0, 0, SRCCOPY
     invoke DeleteDC, hNewDC
     mov eax, hNewBitmap
     ret
 MakeBitmapCopy endp
 
-PopUndoRedo proc
-    invoke DeleteObject, g_undoRedo.hBitmap
-    dec g_undoRedoSize
-    lea ecx, [g_undoRedo + sizeof UndoRedo]
+SaveUndoRedo proc uses ebx
+    mov ebx, g_undoRedoCurr
+    inc ebx
+    .WHILE ebx < g_undoRedoSize
+        invoke RemoveUndoRedo, ebx
+    .ENDW
+    .IF g_undoRedoSize == UNDO_MAX_TIMES
+        invoke RemoveUndoRedo, 0
+        dec g_undoRedoCurr
+    .ENDIF
     mov eax, g_undoRedoSize
     mov edx, sizeof UndoRedo
     mul edx
-    invoke crt_memmove, addr g_undoRedo, ecx, eax
+    lea ebx, [g_undoRedo + eax]
+    invoke MakeBitmapCopy, g_hdcBuf, g_canvasWidth, g_canvasHeight
+    mov (UndoRedo ptr [ebx]).hBitmap, eax
+    mov eax, g_isModified
+    mov (UndoRedo ptr [ebx]).isModified, eax
+    mov eax, g_canvasWidth
+    mov (UndoRedo ptr [ebx]).nWidth, eax
+    mov eax, g_canvasHeight
+    mov (UndoRedo ptr [ebx]).nHeight, eax
+    mov eax, g_undoRedoSize
+    invoke crt_printf, offset debugPrintInt, (UndoRedo ptr [ebx]).hBitmap
+    .IF g_undoRedoSize != 0
+        inc g_undoRedoCurr
+    .ENDIF
+    inc g_undoRedoSize
+    invoke crt_printf, offset debugSave, g_undoRedoCurr, g_undoRedoSize
+    invoke LoadUndoRedoCurr
     ret
-PopUndoRedo endp
+SaveUndoRedo endp
 
-ClearUndoRedo proc
-    .WHILE g_undoRedoSize != 0
-        invoke PopUndoRedo
-    .ENDW
-    mov g_undoRedoCurr, 0
+ClearCanvas proc
+    LOCAL canvasRect:RECT
+    mov canvasRect.left, 0
+    mov canvasRect.top, 0
+    mov eax, g_canvasWidth
+    mov canvasRect.right, eax
+    mov eax, g_canvasHeight
+    mov canvasRect.bottom, eax
+    invoke FillRect, g_hdcBuf, addr canvasRect, WHITE_BRUSH
     ret
-ClearUndoRedo endp
+ClearCanvas endp
 
-LoadUndoRedo proc
+InitUndoRedo proc
+    LOCAL hdc: HDC
+    invoke GetDC, g_hWnd
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov g_hdcBuf, eax
+    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
+    mov g_hdcBitmap, eax
+    invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    invoke CreateCompatibleDC, hdc
+    mov g_hdcDrawingBuf, eax    
+    invoke ReleaseDC, g_hWnd, hdc
     ret
-LoadUndoRedo endp
+InitUndoRedo endp
 
 Undo proc
     .IF g_undoRedoCurr > 0
         dec g_undoRedoCurr
-        invoke LoadUndoRedo
-        mov eax, 1     
+        invoke LoadUndoRedoCurr
+        invoke RestoreHdcBuffer
+        mov eax, 1
     .ELSE
         xor eax, eax
     .ENDIF
@@ -197,7 +305,8 @@ Redo proc
     inc eax
     .IF eax < g_undoRedoSize
         inc g_undoRedoCurr
-        invoke LoadUndoRedo
+        invoke LoadUndoRedoCurr
+        invoke RestoreHdcBuffer
         mov eax, 1     
     .ELSE
         xor eax, eax
@@ -205,24 +314,8 @@ Redo proc
     ret
 Redo endp
 
-SaveUndoRedo proc hdc:HDC
-    ret
-SaveUndoRedo endp
-
-RestoreHdcBuffer proc
-    invoke BitBlt, g_hdcBuf, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcDrawingBuf, 0, 0, SRCCOPY
-    ret
-RestoreHdcBuffer endp
-
 StartDrawing proc
-    
     mov g_isDrawing, TRUE
-    invoke CreateCompatibleDC, g_hdcBuf
-    mov g_hdcDrawingBuf, eax
-    invoke CreateCompatibleBitmap, g_hdcBuf, g_canvasWidth, g_canvasHeight
-    mov g_hdcDrawingBitmap, eax
-    invoke SelectObject, g_hdcDrawingBuf, g_hdcDrawingBitmap
-    invoke BitBlt, g_hdcDrawingBuf, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcBuf, 0, 0, SRCCOPY
     ret
 StartDrawing endp
 
@@ -230,12 +323,10 @@ StopDrawing proc applyChange:DWORD ;Bool
     
     .IF applyChange == TRUE
         mov g_isModified, TRUE
-        invoke SaveUndoRedo, g_hdcBuf, g_hdcBitmap
+        invoke SaveUndoRedo
     .ELSE
         invoke RestoreHdcBuffer
     .ENDIF
-    invoke DeleteObject, g_hdcDrawingBitmap
-    invoke DeleteDC, g_hdcDrawingBuf
     invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     mov g_isDrawing, FALSE
     ret
@@ -250,6 +341,7 @@ StartCapture endp
 StopCapture proc
     mov g_isMouseDown, FALSE
     invoke ReleaseCapture
+    invoke UpdateCursor
     ret
 StopCapture endp
 
@@ -265,36 +357,6 @@ IsSamePoint proc point1X:DWORD, point1Y:DWORD, point2X:DWORD, point2Y:DWORD
     ret
 IsSamePoint endp
 
-CreateCanvas proc hWnd:HWND
-    LOCAL hdc: HDC
-    invoke GetDC, hWnd
-    mov hdc, eax
-    invoke CreateCompatibleDC, hdc
-    mov g_hdcBuf, eax
-    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
-    mov g_hdcBitmap, eax
-    invoke SelectObject, g_hdcBuf, g_hdcBitmap
-    invoke ReleaseDC, hWnd, hdc
-    ret
-CreateCanvas endp
-
-ClearCanvas proc
-    LOCAL canvasRect:RECT
-    mov canvasRect.left, 0
-    mov canvasRect.top, 0
-    mov eax, g_canvasWidth
-    mov canvasRect.right, eax
-    mov eax, g_canvasHeight
-    mov canvasRect.bottom, eax
-    invoke FillRect, g_hdcBuf, addr canvasRect, WHITE_BRUSH
-    ret
-ClearCanvas endp
-
-DestoryCanvas proc
-    invoke DeleteObject, g_hdcBitmap
-    invoke DeleteDC, g_hdcBuf
-    ret
-DestoryCanvas endp
 
 UpdateCanvasWindowPosition proc
     LOCAL rect:RECT
@@ -363,16 +425,14 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     mov g_canvasWidth, eax
     mov eax, bm.bmHeight
     mov g_canvasHeight, eax
-    invoke DestoryCanvas
-    invoke GetDC, g_hWndCanvas
-    invoke CreateCompatibleDC, eax
-    mov g_hdcBuf, eax
     mov eax, bitmapHandle
     mov g_hdcBitmap, eax
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    mov g_isModified, FALSE
+    invoke ClearUndoRedo
+    invoke SaveUndoRedo
     invoke UpdateScrollBarSize
     invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
-    mov g_isModified, FALSE
     ret
 LoadBitmapFromFile endp
 
@@ -721,13 +781,13 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                     jmp DontNewCanvas
                 .endif
             .ENDIF
-            invoke DestoryCanvas
             mov g_canvasWidth, DEFAULT_CANVAS_WIDTH
             mov g_canvasHeight, DEFAULT_CANVAS_HEIGHT
             mov g_isModified, 0
             mov g_bitmapName, 0
-            invoke CreateCanvas, g_hWndCanvas
             invoke ClearCanvas
+            invoke ClearUndoRedo
+            invoke SaveUndoRedo
             invoke UpdateScrollBarSize
             invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
             DontNewCanvas:
@@ -744,6 +804,14 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             .IF eax != NULL
                 invoke SaveBitmapFile
             .endif
+        .ELSEIF eax == IDM_UNDO
+            invoke Undo
+            invoke UpdateScrollBarSize
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF eax == IDM_REDO
+            invoke Redo
+            invoke UpdateScrollBarSize
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         .ELSEIF eax == IDM_EXIT
             invoke SendMessage, hWnd, WM_CLOSE, 0, 0
         .ELSEIF eax == IDM_TOOLBAR
@@ -1127,7 +1195,7 @@ CanvasTrackMouse proc
 CanvasTrackMouse endp
 
 UpdateCursor proc
-    .IF g_isDrawing == FALSE
+    .IF g_isMouseDown == FALSE
         .IF g_mouseInCanvas == 1
             .IF g_toolbarStatus == IDM_PAINT_BARREL
                 mov edx, g_hInst
@@ -1239,13 +1307,12 @@ HandleLButtonUpMessage endp
 
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
-
     .IF uMsg == WM_CREATE
         mov eax, hWnd
         mov g_hWndCanvas, eax
-        ; ===== Create HDC Buffer =====
-        invoke CreateCanvas, hWnd
+        invoke InitUndoRedo
         invoke ClearCanvas
+        invoke SaveUndoRedo
         invoke DragAcceptFiles, hWnd, TRUE
         invoke CanvasTrackMouse
     .ELSEIF uMsg == WM_SIZE
