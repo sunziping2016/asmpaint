@@ -104,6 +104,11 @@ UndoRedo ends
     g_fillType DWORD FILL_DEFAULT
     g_penWidth DWORD 1
     
+    ROUND_RECT_DEFAULT_REDIES_RAIDUS equ 10
+    
+    g_roundRectWidth DWORD ROUND_RECT_DEFAULT_REDIES_RAIDUS
+    g_roundRectHeight DWORD ROUND_RECT_DEFAULT_REDIES_RAIDUS
+    
     g_pen HPEN NULL
     g_brush HBRUSH NULL
 
@@ -1336,7 +1341,7 @@ HandleLButtonDownMessage proc wParam:WPARAM
         invoke StartDrawing
         invoke SetPen, g_hdcBuf
         invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
-    .ELSEIF g_toolbarStatus == IDM_RECTANGLE
+    .ELSEIF g_toolbarStatus == IDM_RECTANGLE || g_toolbarStatus == IDM_ELLIPSE || g_toolbarStatus == IDM_ROUNDED_RECTANGLE
         invoke StartDrawing
         invoke SetBrush, g_hdcBuf
         invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
@@ -1355,33 +1360,86 @@ HandleLButtonDownMessage endp
 HandleMouseMoveMessage proc wParam:WPARAM
     LOCAL x2:SDWORD
     LOCAL y2:SDWORD
-    .IF g_toolbarStatus == IDM_PENCIL
-        invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
-        invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
-        invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
-        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
-    .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
-        invoke RestoreHdcBuffer
-        invoke IsSamePoint, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
-        .IF eax == FALSE
+    mov eax, wParam
+    and eax, MK_LBUTTON
+    .IF eax != 0
+        .IF g_toolbarStatus == IDM_PENCIL
             invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
             invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
-        .ENDIF
-        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
-    .ELSEIF g_toolbarStatus == IDM_RECTANGLE
-        invoke RestoreHdcBuffer
-        invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
-        .IF eax == FALSE
-            mov eax, wParam
-            and eax, MK_SHIFT
-            .IF eax == 0
-                invoke Rectangle, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
-            .ELSE
-                invoke CalculateSquare, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY, addr x2, addr y2
-                invoke Rectangle, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, x2, y2
+            invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
+            invoke RestoreHdcBuffer
+            invoke IsSamePoint, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+            .IF eax == FALSE
+                invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
+                invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
             .ENDIF
-        .endif
-        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF g_toolbarStatus == IDM_RECTANGLE
+            invoke RestoreHdcBuffer
+            invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+            .IF eax == FALSE
+                mov eax, wParam
+                and eax, MK_SHIFT
+                .IF eax == 0
+                    mov eax, g_mouseCanvasX
+                    mov x2, eax
+                    mov ebx, g_mouseCanvasY
+                    mov y2, ebx
+                .ELSE
+                    invoke CalculateSquare, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY, addr x2, addr y2
+                .ENDIF
+                invoke Rectangle, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, x2, y2
+            .endif
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF g_toolbarStatus == IDM_ELLIPSE
+            invoke RestoreHdcBuffer
+            invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+            .IF eax == FALSE
+                mov eax, wParam
+                and eax, MK_SHIFT
+                .IF eax == 0
+                    mov eax, g_mouseCanvasX
+                    mov x2, eax
+                    mov ebx, g_mouseCanvasY
+                    mov y2, ebx
+                .ELSE
+                    invoke CalculateSquare, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY, addr x2, addr y2
+                .ENDIF
+                invoke Ellipse, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, x2, y2
+            .endif
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF g_toolbarStatus == IDM_ROUNDED_RECTANGLE
+            invoke RestoreHdcBuffer
+            invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
+            .IF eax == FALSE
+                mov eax, wParam
+                and eax, MK_SHIFT
+                .IF eax == 0
+                    mov eax, g_mouseCanvasX
+                    mov x2, eax
+                    mov ebx, g_mouseCanvasY
+                    mov y2, ebx
+                .ELSE
+                    invoke CalculateSquare, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY, addr x2, addr y2
+                .ENDIF
+                invoke RoundRect, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, x2, y2, g_roundRectWidth, g_roundRectHeight
+            .endif
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ENDIF
+    .ENDIF
+    .IF g_toolbarStatus == IDM_COLOR_PICKER
+        .IF g_mouseInCanvas == TRUE
+            invoke GetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+            mov edx, wParam
+            and edx, MK_LBUTTON
+            .IF edx != 0
+                invoke SetCanvasColor, 0, eax
+            .ELSE
+                invoke SetCanvasColor, 1, eax
+            .ENDIF
+        .ENDIF
     .ENDIF
     ret
 HandleMouseMoveMessage endp
@@ -1400,7 +1458,7 @@ HandleLButtonUpMessage proc wParam:WPARAM
         .ELSE
             invoke StopDrawing, TRUE
         .ENDIF
-    .ELSEIF g_toolbarStatus == IDM_RECTANGLE
+    .ELSEIF g_toolbarStatus == IDM_RECTANGLE || g_toolbarStatus == IDM_ELLIPSE || g_toolbarStatus == IDM_ROUNDED_RECTANGLE
         invoke DeleteBrush
         invoke IsSameRowOrColumn, g_previousPoint.x, g_previousPoint.y, g_mouseCanvasX, g_mouseCanvasY
         .IF eax == TRUE
@@ -1412,6 +1470,20 @@ HandleLButtonUpMessage proc wParam:WPARAM
     invoke StopCapture
     ret
 HandleLButtonUpMessage endp
+
+HandleRButtonDownMessage proc wParam
+    invoke StartCapture
+    .IF g_toolbarStatus == IDM_COLOR_PICKER
+        invoke GetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+        invoke SetCanvasColor, 1, eax
+    .ELSEIF g_toolbarStatus == IDM_PAINT_BARREL
+        invoke StartDrawing
+        invoke FillWithBarrel, g_backgroundColor
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        invoke StopDrawing, TRUE
+    .ENDIF
+    ret
+HandleRButtonDownMessage endp
 
 CanvasWinProc proc USES ebx esi,
     hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
@@ -1474,7 +1546,7 @@ CanvasWinProc proc USES ebx esi,
     .ELSEIF uMsg == WM_PAINT
         invoke Render, hWnd
     .ELSEIF uMsg == WM_LBUTTONDOWN
-        .IF g_mouseInCanvas
+        .IF g_mouseInCanvas == TRUE
             invoke HandleLButtonDownMessage, wParam
         .ENDIF
     .ELSEIF uMsg == WM_MOUSEMOVE
@@ -1488,6 +1560,14 @@ CanvasWinProc proc USES ebx esi,
     .ELSEIF uMsg == WM_LBUTTONUP
         .IF g_isCapturing == TRUE
             invoke HandleLButtonUpMessage, wParam
+        .ENDIF
+    .ELSEIF uMsg == WM_RBUTTONDOWN
+        .IF g_mouseInCanvas == TRUE
+            invoke HandleRButtonDownMessage, wParam
+        .ENDIF
+    .ELSEIF uMsg == WM_RBUTTONUP
+        .IF g_isCapturing == TRUE
+            invoke StopCapture
         .ENDIF
     .ELSEIF uMsg == WM_MOUSELEAVE
         mov g_mouseInCanvas, 0
