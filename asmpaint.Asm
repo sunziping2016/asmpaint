@@ -25,20 +25,20 @@ UndoRedo ends
 
     g_tbControlButtons \
         TBBUTTON <8, 0, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_SEP, 0, 0, NULL>
-        TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <1, IDM_RECT_SELECTOR, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        ;TBBUTTON <0, IDM_FREE_SELECTOR, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        ;TBBUTTON <1, IDM_RECT_SELECTOR, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <2, IDM_ERASER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <3, IDM_PAINT_BARREL, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <4, IDM_COLOR_PICKER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <5, IDM_MAGNIFIER, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <6, IDM_PENCIL, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <7, IDM_BRUSH, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <8, IDM_AIRBRUSH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <9, IDM_TEXT, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <10, IDM_STRAIGHT_LINE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <11, IDM_CURVE, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <12, IDM_RECTANGLE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <13, IDM_POLYGON, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        ;TBBUTTON <7, IDM_BRUSH, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        ;TBBUTTON <8, IDM_AIRBRUSH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        ;TBBUTTON <9, IDM_TEXT, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <10, IDM_STRAIGHT_LINE, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <11, IDM_CURVE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <12, IDM_RECTANGLE, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        ;TBBUTTON <13, IDM_POLYGON, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <14, IDM_ELLIPSE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <15, IDM_ROUNDED_RECTANGLE, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <8, 0, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_SEP, 0, 0, NULL>
@@ -174,10 +174,10 @@ UndoRedo ends
     STATUSBAR_ENDING_WIDTH equ 24
     UNDO_MAX_TIMES equ 20
 
-    debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
-    debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
-    debugPrintInt BYTE "%u", 0ah, 0
-    debugHelp BYTE "menu: %u (dropdown: %d)",0ah,0
+    ;debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
+    ;debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
+    ;debugPrintInt BYTE "%u", 0ah, 0
+    ;debugHelp BYTE "menu: %u (dropdown: %d)",0ah,0
 
     g_toolbarStatus DWORD IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
@@ -534,7 +534,8 @@ ClearCanvas proc
     mov canvasRect.right, eax
     mov eax, g_canvasHeight
     mov canvasRect.bottom, eax
-    invoke FillRect, g_hdcBuf, addr canvasRect, WHITE_BRUSH
+    invoke GetStockObject, WHITE_BRUSH
+    invoke FillRect, g_hdcBuf, addr canvasRect, eax
     ret
 ClearCanvas endp
 
@@ -966,7 +967,8 @@ ResizeCanvas proc, newWidth:DWORD, newHeight:DWORD
     mov rect.right, eax
     mov eax, newHeight
     mov rect.bottom, eax
-    invoke FillRect, hNewDC, addr rect, WHITE_BRUSH
+    invoke GetStockObject, WHITE_BRUSH
+    invoke FillRect, hNewDC, addr rect, eax
     invoke BitBlt, hNewDC, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcBuf, 0, 0, SRCCOPY
     invoke DeleteObject, g_hdcBitmap
     invoke DeleteDC, g_hdcBuf
@@ -1021,35 +1023,21 @@ ConfirmSaveModify proc
 ConfirmSaveModify endp
 
 UpdateStatusBarInfo proc, id:DWORD
-    ;LOCAL count:DWORD
-    invoke crt_printf, offset debugHelp, id, g_isMenuOpened
-    ; g_textBuffer
     .IF id != 0
         mov ecx, idmsLen
         mov esi, 0
-        ;debug
-        ;invoke crt_printf, offset debugEax, ecx
     Loop_idms:
-        ;mov count, ecx
         mov eax, id
-        ;debug
-        ;invoke crt_printf, offset debugEax, eax
-        ;invoke crt_printf, offset debugId, idms[esi]
-        ;mov eax, id
         cmp eax, idms[esi]
         je Loop_idms_end
         add esi, 4
-        ;mov ecx, count
         loop Loop_idms
     Loop_idms_end:
         invoke lstrcpy, offset g_textBuffer, helpMessages[esi]
-        ; display help message
     .ELSEIF g_isMenuOpened != 0
-        ; display empty message
         mov g_textBuffer, 0
     .ELSE
         invoke lstrcpy, offset g_textBuffer, offset welcomeMessage
-        ; display welcome message
     .ENDIF
     invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 0, offset g_textBuffer
     ret
@@ -1196,7 +1184,7 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
         invoke UpdateCanvasWindowPosition
         invoke UpdateStatusBarSize
     .ELSEIF uMsg == WM_COMMAND
-        invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+        ;invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
         mov eax, wParam
         movzx eax, ax
         .IF eax == IDM_OPEN
@@ -1341,7 +1329,7 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                 sub eax, IDM_ERASER_SIZE1 - 2
                 shl eax, 1
                 mov g_eraserWidth, eax
-                invoke crt_printf, offset debugPrintInt, g_eraserWidth
+                ;invoke crt_printf, offset debugPrintInt, g_eraserWidth
             .ELSE
             .ENDIF
             invoke UpdateCheckMenu, offset menuGroupEraserSize, ebx
@@ -2468,7 +2456,7 @@ WinMain proc hInst:HINSTANCE, hPrevInst:HINSTANCE, cmdLine:LPSTR, cmdShow:DWORD
     mov wc.lpszMenuName, IDR_MENU
     mov wc.lpszClassName, OFFSET className
     
-    invoke LoadIcon, NULL, IDI_APPLICATION
+    invoke LoadIcon, g_hInst, IDI_APP
     mov wc.hIcon, eax
     mov wc.hIconSm, eax
     
