@@ -59,6 +59,9 @@ UndoRedo ends
     aboutDialogText BYTE "由车行、孙子平、赵尚明协作开发完成。", 0ah, "以及，辣鸡大作孽，毁我青春，掉我头发！", 0
     aboutDialogName BYTE "关于", 0
 
+    yesText BYTE "是", 0
+    noText BYTE "否", 0
+    intText BYTE "%d", 0
 
     mainWindowModifiedTitle BYTE "*%s - 画图", 0
     mainWindowNoModifiedTitle BYTE "%s - 画图", 0
@@ -76,6 +79,7 @@ UndoRedo ends
     g_canvasHeight DWORD DEFAULT_CANVAS_HEIGHT
     g_canvasOffsetX DWORD 0
     g_canvasOffsetY DWORD 0
+
     g_zoom DWORD 1
 
     SCROLL_STEP_PIXEL equ 4
@@ -90,7 +94,7 @@ UndoRedo ends
 
     debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
     debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
-    debugPrintInt BYTE "%x", 0ah, 0
+    debugPrintInt BYTE "%u", 0ah, 0
     debugHelp BYTE "menu: %u (dropdown: %d)",0ah,0
 
     g_toolbarStatus DWORD IDM_PENCIL
@@ -132,6 +136,8 @@ UndoRedo ends
     g_undoRedoSize DWORD 0    
 
     g_isMenuOpened DWORD 0
+    
+    MAX_HEIGHT_WIDTH equ 4096
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -152,7 +158,13 @@ UndoRedo ends
     g_backgroundColor DWORD ?
 
     g_undoRedo UndoRedo UNDO_MAX_TIMES dup(<?, ?>)
-    g_textBuffer BYTE 1024 dup(?)
+    
+    TEXT_BUFFER_SIZE equ 1024
+    
+    g_textBuffer BYTE TEXT_BUFFER_SIZE dup(?)
+
+    g_tempInt1 DWORD ?
+    g_tempInt2 DWORD ?
 .code
 
 RemoveUndoRedo proc uses esi edi, index:DWORD
@@ -725,6 +737,40 @@ SetCanvasColor proc index:DWORD, color:DWORD
     ret
 SetCanvasColor endp
 
+ResizeCanvas proc, newWidth:DWORD, newHeight:DWORD
+    LOCAL hdc:HDC
+    LOCAL hNewDC:HDC
+    LOCAL hNewBitmap:HBITMAP
+    LOCAL rect:RECT
+    invoke GetDC, g_hWnd
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov hNewDC, eax
+    invoke CreateCompatibleBitmap, hdc, newWidth, newHeight
+    mov hNewBitmap, eax
+    invoke ReleaseDC, g_hWnd, hdc
+    invoke SelectObject, hNewDC, hNewBitmap
+    mov rect.left, 0
+    mov rect.top, 0
+    mov eax, newWidth
+    mov rect.right, eax
+    mov eax, newHeight
+    mov rect.bottom, eax
+    invoke FillRect, hNewDC, addr rect, WHITE_BRUSH
+    invoke BitBlt, hNewDC, 0, 0, g_canvasWidth, g_canvasHeight, g_hdcBuf, 0, 0, SRCCOPY
+    invoke DeleteObject, g_hdcBitmap
+    invoke DeleteDC, g_hdcBuf
+    mov eax, hNewDC
+    mov g_hdcBuf, eax
+    mov eax, hNewBitmap
+    mov g_hdcBitmap, eax
+    mov eax, newWidth
+    mov g_canvasWidth, eax
+    mov eax, newHeight
+    mov g_canvasHeight, eax
+    ret
+ResizeCanvas endp
+
 PromptColor proc, index: DWORD
     LOCAL choose:CHOOSECOLOR
     mov choose.lStructSize, sizeof CHOOSECOLOR
@@ -805,14 +851,73 @@ UpdateStatusBarSize proc
     ret
 UpdateStatusBarSize endp
 
-PropertyDialogProc proc hWin:HWND,uMsg:UINT,wParam:WPARAM,lParam:LPARAM
-	xor    eax,eax
-	.IF uMsg == WM_COMMAND
-	    invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+PropertyDialogProc proc uses ebx esi, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
+    LOCAL handle:HWND
+    .IF uMsg == WM_INITDIALOG
+        .IF g_isModified == 0
+            mov eax, offset yesText
+        .ELSE
+            mov eax, offset noText
+        .ENDIF            
+        invoke SetDlgItemText, hWnd, IDC_PROPERTY_SAVED, eax
+        invoke crt_sprintf, offset g_textBuffer, offset intText, g_canvasWidth
+        invoke SetDlgItemText, hWnd, IDC_PROPERTY_WIDTH, offset g_textBuffer
+        invoke crt_sprintf, offset g_textBuffer, offset intText, g_canvasHeight
+        invoke SetDlgItemText, hWnd, IDC_PROPERTY_HEIGHT, offset g_textBuffer
+        invoke GetDlgItem, hWnd, IDC_PROPERTY_WIDTH
+        mov handle, eax
+        invoke PostMessage, hWnd, WM_NEXTDLGCTL, handle, TRUE
+        invoke SendMessage, handle, EM_SETLIMITTEXT, 4, 0
+        invoke GetDlgItem, hWnd, IDC_PROPERTY_HEIGHT
+        mov handle, eax
+        invoke SendMessage, handle, EM_SETLIMITTEXT, 4, 0
+        invoke GetDlgItem, hWnd, IDC_PROPERTY_WIDTH_UDN
+        mov handle, eax
+        invoke SendMessage, handle, UDM_SETRANGE, 0, 1 * 10000h + 9999
+        invoke GetDlgItem, hWnd, IDC_PROPERTY_HEIGHT_UDN
+        mov handle, eax
+        invoke SendMessage, handle, UDM_SETRANGE, 0, 1 * 10000h + 9999
+        mov eax, g_canvasWidth
+        mov g_tempInt1, eax
+        mov eax, g_canvasHeight
+        mov g_tempInt2, eax
+	.ELSEIF uMsg == WM_COMMAND
+	    .IF wParam == IDC_PROPERTY_OKAY
+	        invoke EndDialog, hWnd, 1
+	    .ELSEIF wParam == IDC_PROPERTY_CANCEL || wParam == IDCANCEL
+	        invoke EndDialog, hWnd, 0
+	    .ELSEIF wParam == IDC_PROPERTY_DEFAULT
+	        mov g_tempInt1, DEFAULT_CANVAS_WIDTH
+	        mov g_tempInt2, DEFAULT_CANVAS_HEIGHT
+            invoke crt_sprintf, offset g_textBuffer, offset intText, DEFAULT_CANVAS_WIDTH
+            invoke SetDlgItemText, hWnd, IDC_PROPERTY_WIDTH, offset g_textBuffer
+            invoke crt_sprintf, offset g_textBuffer, offset intText, DEFAULT_CANVAS_HEIGHT
+            invoke SetDlgItemText, hWnd, IDC_PROPERTY_HEIGHT, offset g_textBuffer
+	    .ELSE
+	        mov eax, wParam
+	        movzx ebx, ax
+	        shr eax, 16
+	        .IF eax == EN_CHANGE && (ebx == IDC_PROPERTY_WIDTH || ebx == IDC_PROPERTY_HEIGHT)
+	            .IF ebx == IDC_PROPERTY_WIDTH
+	                mov esi, offset g_tempInt1
+	            .ELSE
+	                mov esi, offset g_tempInt2
+	            .ENDIF
+                invoke GetDlgItemText, hWnd, ebx, offset g_textBuffer, TEXT_BUFFER_SIZE
+                invoke crt_atol, offset g_textBuffer
+                .IF (SDWORD ptr eax) < 1 || (SDWORD ptr eax) >= MAX_HEIGHT_WIDTH
+                    mov eax, [esi]
+                    invoke crt_sprintf, offset g_textBuffer, offset intText, eax
+                    invoke SetDlgItemText, hWnd, ebx, offset g_textBuffer
+                .ELSE
+                    mov [esi], eax
+                .ENDIF
+	        .ENDIF
+	    .ENDIF
 	.ENDIF
+	xor eax, eax
 	ret
 PropertyDialogProc endp
-
 
 WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
@@ -962,6 +1067,18 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
         .ELSEIF eax == IDM_PROPERTY
             invoke DialogBoxParam, g_hInst, IDD_PROPERTY, g_hWnd, offset PropertyDialogProc, 0
+            .IF eax != 0
+                mov ecx, g_tempInt1
+                mov edx, g_tempInt2
+                .IF ecx != g_canvasWidth || edx != g_canvasHeight
+                    invoke ResizeCanvas, ecx, edx
+                    mov g_isModified, 1
+                    invoke SaveUndoRedo
+                    invoke UpdateScrollBarSize
+                    invoke UpdateMainWindowTitle
+                    invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+                .ENDIF
+            .ENDIF
         .ELSEIF eax >= IDM_TOOLBAR_FIRST && eax <=IDM_TOOLBAR_LAST
             mov eax, wParam
             mov g_toolbarStatus, eax
