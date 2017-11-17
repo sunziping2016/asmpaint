@@ -32,7 +32,7 @@ UndoRedo ends
         TBBUTTON <4, IDM_COLOR_PICKER, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <5, IDM_MAGNIFIER, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <6, IDM_PENCIL, TBSTATE_ENABLED or TBSTATE_CHECKED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
-        TBBUTTON <7, IDM_BRASH, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
+        TBBUTTON <7, IDM_BRUSH, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <8, IDM_AIRBRUSH, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <9, IDM_TEXT, TBSTATE_ENABLED or TBSTATE_WRAP, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
         TBBUTTON <10, IDM_STRAIGHT_LINE, TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>
@@ -65,6 +65,89 @@ UndoRedo ends
 
     mainWindowModifiedTitle BYTE "*%s - 画图", 0
     mainWindowNoModifiedTitle BYTE "%s - 画图", 0
+    
+    
+    debugEax BYTE "Eax: %d", 0ah, 0
+    debugId BYTE "idms[esi]: %d", 0ah, 0
+    
+    newMenuItemHelpMessage BYTE "新建文件.", 0
+    openMenuItemHelpMessage BYTE "打开已有文件.", 0
+    saveMenuItemHelpMessage BYTE "保存文件.", 0
+    saveAsMenuItemHelpMessage BYTE "以新的名字保存图片.", 0
+    exitMenuItemHelpMessage BYTE "退出画图.", 0
+    undoMenuItemHelpMessage BYTE "撤销最近一次的操作.", 0
+    redoMenuItemHelpMessage BYTE "重做最近撤销的操作.", 0
+    toolBarMenuItemHelpMessage BYTE "显示或隐藏左侧工具栏.", 0
+    statusBarMenuItemHelpMessage BYTE "显示或隐藏状态栏.", 0
+    zoomDefaultMenuItemHelpMessage BYTE "默认缩放比例100%.", 0
+    zoomLargeMenuItemHelpMessage BYTE "放大图像.", 0
+    zoomCustomeMenuItemHelpMessage BYTE "自定义缩放比例.", 0
+    toolMenuItemHelpMessage BYTE "图像工具.", 0
+    penWidth1MenuItemHelpMessage BYTE "画笔宽度1像素.", 0
+    penWidth2MenuItemHelpMessage BYTE "画笔宽度2像素.", 0
+    penWidth3MenuItemHelpMessage BYTE "画笔宽度3像素.", 0
+    penWidth4MenuItemHelpMessage BYTE "画笔宽度4像素.", 0
+    penWidth5MenuItemHelpMessage BYTE "画笔宽度5像素.", 0
+    penWidth6MenuItemHelpMessage BYTE "自定义画笔宽度.", 0
+    fillDefaultMenuItemHelpMessage BYTE "默认填充模式.", 0
+    fillNoBrushMenuItemHelpMessage BYTE "无填充.", 0
+    fillNoPenMenuItemHelpMessage BYTE "无边框.", 0
+    eraserSize1MenuItemHelpMessage BYTE "橡皮擦宽度4像素.", 0
+    eraserSize2MenuItemHelpMessage BYTE "橡皮擦宽度6像素.", 0
+    eraserSize3MenuItemHelpMessage BYTE "橡皮擦宽度8像素.", 0
+    eraserSize4MenuItemHelpMessage BYTE "橡皮擦宽度10像素.", 0
+    eraserSize5MenuItemHelpMessage BYTE "自定义橡皮擦大小.", 0
+    clearMenuItemHelpMessage BYTE "清空图片或被选区域.", 0
+    propertyMenuItemHelpMessage BYTE "改变图片属性.", 0
+    helpMenuItemHelpMessage BYTE "显示帮助信息.", 0
+    aboutMenuItemHelpMessage BYTE "显示关于此软件的信息.", 0
+    
+    freeSelectorHelpMessage BYTE "选择任意形状的区域来移动，复制或编辑.", 0
+    rectSelectorHelpMessage BYTE "选择长方形区域来移动，复制或编辑.", 0
+    erasorSelectorHelpMessage BYTE "擦掉部分图片.", 0
+    paintBarrelHelpMessage BYTE "以当前前景色填充一个区域.", 0
+    colorPickerHelpMessage BYTE "从图片提取颜色以供后续绘制.", 0
+    magnifierHelpMessage BYTE "改变放大尺寸.", 0
+    pencilHelpMessage BYTE "绘制任意形状的曲线.", 0
+    brushHelpMessage BYTE "用指定了形状与大小的画刷进行绘图.", 0
+    airBrushHelpMessage BYTE "用指定大小的喷枪绘图.", 0
+    textHelpMessage BYTE "插入文字.", 0
+    straightLineHelpMessage BYTE "绘制直线.", 0
+    curveHelpMessage BYTE "绘制弧线.", 0
+    rectangleHelpMessage BYTE "绘制指定填充样式的矩形.", 0
+    polygonHelpMessage BYTE "绘制指定填充样式的多边形.", 0
+    ellipseHelpMessage BYTE "绘制制定填充样式的椭圆.", 0
+    roundedRectangleMessage BYTE "绘制指定填充样式的圆角矩形.", 0
+    foregroundColorHelpMessage BYTE "设置前景色.", 0
+    backgroundColorHelpMessage BYTE "设置背景色.", 0
+    
+    welcomeMessage BYTE "欢迎!", 0
+    
+    idms DWORD IDM_NEW, IDM_OPEN, IDM_SAVE, IDM_SAVEAS, IDM_EXIT, IDM_UNDO, IDM_REDO, IDM_TOOLBAR, IDM_STATUSBAR
+    DWORD IDM_ZOOM_DEFAULT, IDM_ZOOM_LARGE, IDM_ZOOM_CUSTOM, IDM_TOOL, IDM_PEN_WIDTH1, IDM_PEN_WIDTH2, IDM_PEN_WIDTH3
+    DWORD IDM_PEN_WIDTH4, IDM_PEN_WIDTH5, IDM_PEN_WIDTH6, IDM_FILL_DEFAULT, IDM_FILL_NOBRUSH, IDM_FILL_NOPEN, IDM_ERASER_SIZE1
+    DWORD IDM_ERASER_SIZE2, IDM_ERASER_SIZE3, IDM_ERASER_SIZE4, IDM_ERASER_SIZE5, IDM_CLEAR, IDM_PROPERTY, IDM_HELP
+    DWORD IDM_ABOUT, IDM_FREE_SELECTOR, IDM_RECT_SELECTOR, IDM_ERASER, IDM_PAINT_BARREL, IDM_COLOR_PICKER, IDM_MAGNIFIER
+    DWORD IDM_PENCIL, IDM_BRUSH, IDM_AIRBRUSH, IDM_TEXT, IDM_STRAIGHT_LINE, IDM_CURVE, IDM_RECTANGLE
+    DWORD IDM_POLYGON, IDM_ELLIPSE, IDM_ROUNDED_RECTANGLE, IDM_FOREGROUND_COLOR, IDM_BACKGROUND_COLOR
+    idmsLen DWORD 49
+    helpMessages DWORD offset newMenuItemHelpMessage, offset openMenuItemHelpMessage, offset saveMenuItemHelpMessage
+    DWORD offset saveAsMenuItemHelpMessage, offset exitMenuItemHelpMessage, offset undoMenuItemHelpMessage
+    DWORD offset redoMenuItemHelpMessage, offset toolBarMenuItemHelpMessage, offset statusBarMenuItemHelpMessage
+    DWORD offset zoomDefaultMenuItemHelpMessage, offset zoomLargeMenuItemHelpMessage, offset zoomCustomeMenuItemHelpMessage
+    DWORD offset toolMenuItemHelpMessage, offset penWidth1MenuItemHelpMessage, offset penWidth2MenuItemHelpMessage
+    DWORD offset penWidth3MenuItemHelpMessage, offset penWidth4MenuItemHelpMessage, offset penWidth5MenuItemHelpMessage
+    DWORD offset penWidth6MenuItemHelpMessage, offset fillDefaultMenuItemHelpMessage, offset fillNoBrushMenuItemHelpMessage
+    DWORD offset fillNoPenMenuItemHelpMessage, offset eraserSize1MenuItemHelpMessage, offset eraserSize2MenuItemHelpMessage
+    DWORD offset eraserSize3MenuItemHelpMessage, offset eraserSize4MenuItemHelpMessage, offset eraserSize5MenuItemHelpMessage
+    DWORD offset clearMenuItemHelpMessage, offset propertyMenuItemHelpMessage, offset helpMenuItemHelpMessage
+    DWORD offset aboutMenuItemHelpMessage, offset freeSelectorHelpMessage, offset rectSelectorHelpMessage
+    DWORD offset erasorSelectorHelpMessage, offset paintBarrelHelpMessage, offset colorPickerHelpMessage
+    DWORD offset magnifierHelpMessage, offset pencilHelpMessage, offset brushHelpMessage
+    DWORD offset airBrushHelpMessage, offset textHelpMessage, offset straightLineHelpMessage
+    DWORD offset curveHelpMessage, offset rectangleHelpMessage, offset polygonHelpMessage
+    DWORD offset ellipseHelpMessage, offset roundedRectangleMessage, offset foregroundColorHelpMessage
+    DWORD offset backgroundColorHelpMessage
 
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
@@ -862,16 +945,37 @@ ConfirmSaveModify proc
 ConfirmSaveModify endp
 
 UpdateStatusBarInfo proc, id:DWORD
+    ;LOCAL count:DWORD
     invoke crt_printf, offset debugHelp, id, g_isMenuOpened
     ; g_textBuffer
     .IF id != 0
+        mov ecx, idmsLen
+        mov esi, 0
+        ;debug
+        ;invoke crt_printf, offset debugEax, ecx
+    Loop_idms:
+        ;mov count, ecx
+        mov eax, id
+        ;debug
+        ;invoke crt_printf, offset debugEax, eax
+        ;invoke crt_printf, offset debugId, idms[esi]
+        ;mov eax, id
+        cmp eax, idms[esi]
+        je Loop_idms_end
+        add esi, 4
+        ;mov ecx, count
+        loop Loop_idms
+    Loop_idms_end:
+        invoke lstrcpy, offset g_textBuffer, helpMessages[esi]
         ; display help message
     .ELSEIF g_isMenuOpened != 0
         ; display empty message
         mov g_textBuffer, 0
     .ELSE
+        invoke lstrcpy, offset g_textBuffer, offset welcomeMessage
         ; display welcome message
     .ENDIF
+    invoke SendMessage, g_hWndStatusBar, SB_SETTEXT, 0, offset g_textBuffer
     ret
 UpdateStatusBarInfo endp
 
@@ -1686,7 +1790,7 @@ UpdateCursor proc
             .ELSEIF g_toolbarStatus == IDM_PENCIL
                 mov edx, g_hInst
                 mov ecx, IDC_PEN
-            .ELSEIF g_toolbarStatus == IDM_BRASH
+            .ELSEIF g_toolbarStatus == IDM_BRUSH
                 mov edx, g_hInst
                 mov ecx, IDC_BRUSH
             .ELSEIF g_toolbarStatus == IDM_AIRBRUSH
