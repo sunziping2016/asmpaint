@@ -113,6 +113,9 @@ UndoRedo ends
     FILL_WITHOUT_FILL equ 2
     g_fillType DWORD FILL_DEFAULT
     g_penWidth DWORD 1
+    g_eraserWidth DWORD 4
+    g_hdcEraserBuf HDC NULL
+    g_hdcEraserBitmap HBITMAP NULL
     
     ROUND_RECT_DEFAULT_REDIES_RAIDUS equ 10
     
@@ -133,7 +136,9 @@ UndoRedo ends
     g_hasStatusBar DWORD 1
 
     g_undoRedoCurr DWORD 0
-    g_undoRedoSize DWORD 0    
+    g_undoRedoSize DWORD 0
+
+    g_showCursor DWORD 1
 
     g_isMenuOpened DWORD 0
     
@@ -166,6 +171,52 @@ UndoRedo ends
     g_tempInt1 DWORD ?
     g_tempInt2 DWORD ?
 .code
+CreateEraser proc USES ebx
+    LOCAL hdc:HDC
+    LOCAL eraserWidth:DWORD
+    LOCAL pen:HPEN
+    LOCAL brush:HBRUSH
+    invoke GetDC, g_hWndCanvas
+    mov hdc, eax
+    invoke CreateCompatibleDC, hdc
+    mov g_hdcEraserBuf, eax
+    mov eax, g_eraserWidth
+    mov ebx, g_zoom
+    mul ebx
+    mov eraserWidth, eax
+    invoke CreateCompatibleBitmap, hdc, eraserWidth, eraserWidth
+    mov g_hdcEraserBitmap, eax
+    invoke SelectObject, g_hdcEraserBuf, g_hdcEraserBitmap
+    invoke CreatePen, PS_SOLID, 1, 0
+    mov pen, eax
+    invoke SelectObject, g_hdcEraserBuf, pen
+    invoke CreateSolidBrush, g_backgroundColor
+    mov brush, eax
+    invoke SelectObject, g_hdcEraserBuf, brush
+    
+    invoke Rectangle, g_hdcEraserBuf, 0, 0, eraserWidth, eraserWidth
+    
+    invoke DeleteObject, pen
+    invoke DeleteObject, brush
+    invoke ReleaseDC, g_hWndCanvas, hdc
+    ret
+CreateEraser endp
+
+DestoryEraser proc
+    invoke DeleteObject, g_hdcEraserBitmap
+    mov g_hdcEraserBitmap, NULL
+    invoke DeleteDC, g_hdcEraserBuf
+    mov g_hdcEraserBuf, NULL
+    ret
+DestoryEraser endp
+
+UpdateEraser proc
+    .IF g_hdcEraserBuf != NULL
+        invoke DestoryEraser
+    .ENDIF
+    invoke CreateEraser
+    ret
+UpdateEraser endp
 
 RemoveUndoRedo proc uses esi edi, index:DWORD
     ; index should be in [0, g_undoRedoSize), assert g_undoRedoSize >= 1
@@ -1154,10 +1205,30 @@ ClientToCanvasY proc pos:DWORD
     ret
 ClientToCanvasY endp
 
+CanvasToClientX proc pos:DWORD
+    mov eax, pos
+    sub eax, g_canvasOffsetX
+    mov edx, g_zoom
+    mul edx
+    add eax, CANVAS_MARGIN
+    ret
+CanvasToClientX endp
+
+CanvasToClientY proc pos:DWORD
+    mov eax, pos
+    sub eax, g_canvasOffsetY
+    mov edx, g_zoom
+    mul edx
+    add eax, CANVAS_MARGIN
+    ret
+CanvasToClientY endp
+
 UpdateMousePos proc
     LOCAL point:POINT
+    LOCAL rect:RECT
     invoke GetCursorPos, addr point
     invoke ScreenToClient, g_hWndCanvas, addr point
+    invoke GetClientRect, g_hWndCanvas, addr rect
     mov eax, point.x
     mov g_mouseClientX, eax
     mov eax, point.y
@@ -1166,10 +1237,16 @@ UpdateMousePos proc
     mov g_mouseCanvasX, eax
     invoke ClientToCanvasY, g_mouseClientY
     mov g_mouseCanvasY, eax
-    mov ecx, g_canvasWidth
-    mov edx, g_canvasHeight
-    .IF g_mouseCanvasX >= 0 && g_mouseCanvasX < ecx && g_mouseCanvasY >= 0 && g_mouseCanvasY < edx
-        mov g_mouseInCanvas, 1
+    mov ecx, rect.right
+    mov edx, rect.bottom
+    .IF g_mouseClientX >= 0 && g_mouseClientX < ecx && g_mouseClientY >= 0 && g_mouseClientY < edx
+        mov ecx, g_canvasWidth
+        mov edx, g_canvasHeight
+        .IF g_mouseCanvasX >= 0 && g_mouseCanvasX < ecx && g_mouseCanvasY >= 0 && g_mouseCanvasY < edx
+            mov g_mouseInCanvas, 1
+        .ELSE
+            mov g_mouseInCanvas, 0
+        .ENDIF
     .ELSE
         mov g_mouseInCanvas, 0
     .ENDIF
@@ -1225,9 +1302,10 @@ UpdateScrollPosition proc USES ebx, index:DWORD, mode:DWORD, value:DWORD
         .ELSE
             mov g_canvasOffsetX, eax
         .ENDIF
-        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         invoke UpdateMousePos
         invoke UpdateStatusBarMouseCoordinate
+        invoke UpdateCursor
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ENDIF
     ret
 UpdateScrollPosition endp
@@ -1293,7 +1371,6 @@ UpdateScrollBarSize proc USES ebx
     mov g_canvasOffsetX, eax
     invoke UpdateMousePos
     invoke UpdateStatusBarMouseCoordinate
-
     ret
 UpdateScrollBarSize endp
 
@@ -1334,6 +1411,14 @@ SetPen proc hdc:HDC
     ret
 SetPen endp
 
+DeletePen proc
+    .IF g_pen != NULL
+        invoke DeleteObject, g_pen
+        mov g_pen, NULL
+    .endif
+    ret
+DeletePen endp
+
 SetBrush proc hdc:HDC
     .IF g_fillType == FILL_WITHOUT_BORDER
         invoke GetStockObject, NULL_PEN
@@ -1355,14 +1440,6 @@ SetBrush proc hdc:HDC
     ret
 SetBrush endp
 
-DeletePen proc
-    .IF g_pen != NULL
-        invoke DeleteObject, g_pen
-        mov g_pen, NULL
-    .endif
-    ret
-DeletePen endp
-
 DeleteBrush proc
     .IF g_pen != NULL
         invoke DeleteObject, g_pen
@@ -1374,6 +1451,144 @@ DeleteBrush proc
     .endif
     ret
 DeleteBrush endp
+
+SetRectanglePen proc hdc:HDC, color:DWORD, penWidth:DWORD
+    LOCAL canvasHdc:HDC
+    LOCAL hdcTemp:HDC
+    LOCAL bitmapTemp:HBITMAP
+    LOCAL rect:RECT
+    LOCAL brush:HBRUSH
+    LOCAL br:LOGBRUSH
+    invoke GetDC, g_hWndCanvas
+    mov canvasHdc, eax
+    invoke CreateCompatibleDC, canvasHdc
+    mov hdcTemp, eax
+    invoke CreateCompatibleBitmap, canvasHdc, penWidth, penWidth
+    mov bitmapTemp, eax
+    invoke SelectObject, hdcTemp, bitmapTemp
+    mov rect.left, 0
+    mov rect.top, 0
+    mov eax, penWidth
+    mov rect.right, eax
+    mov rect.bottom, eax
+    invoke CreateSolidBrush, color
+    mov brush, eax
+    invoke FillRect, hdcTemp, addr rect, brush
+    mov br.lbStyle, BS_PATTERN
+    mov br.lbColor, 0
+    mov eax, bitmapTemp
+    mov br.lbHatch, eax
+    invoke ExtCreatePen,PS_SOLID or PS_GEOMETRIC, penWidth, addr br, 0, 0
+    mov g_pen, eax
+    invoke SelectObject, hdc, eax
+    invoke DeleteObject, bitmapTemp
+    invoke DeleteObject, brush
+    invoke DeleteDC, hdcTemp
+    invoke ReleaseDC, g_hWndCanvas, canvasHdc
+    invoke CreateSolidBrush, color
+    mov g_brush, eax
+    ret
+SetRectanglePen endp
+
+DeleteRectanglePen proc
+    .IF g_pen != NULL
+        invoke DeleteObject, g_pen
+        mov g_pen, NULL
+    .endif
+    .IF g_brush != NULL
+        invoke DeleteObject, g_brush
+        mov g_brush, NULL
+    .endif
+    ret
+DeleteRectanglePen endp
+
+DrawEraser proc hdc:HDC
+    LOCAL eraserLeftCanvas:DWORD
+    LOCAL eraserTopCanvas:DWORD
+    LOCAL eraserFromX:DWORD
+    LOCAL eraserFromY:DWORD
+    LOCAL eraserToX:DWORD
+    LOCAL eraserToY:DWORD
+    LOCAL eraserWidth:DWORD
+    LOCAL eraserHeight:DWORD
+    LOCAL canvasFromX:DWORD
+    LOCAL canvasFromY:DWORD
+    
+    mov eax, g_eraserWidth
+    shr eax, 1
+    mov edx, g_mouseCanvasX
+    sub edx, eax
+    mov eraserLeftCanvas, edx
+    .IF SDWORD PTR edx > 0
+        mov eraserFromX, edx
+    .ELSE
+        mov eraserFromX, 0
+    .ENDIF
+    mov edx, g_mouseCanvasY
+    sub edx, eax
+    mov eraserTopCanvas, edx
+    .IF SDWORD PTR edx > 0
+        mov eraserFromY, edx
+    .ELSE
+        mov eraserFromY, 0
+    .ENDIF
+    mov edx, g_mouseCanvasX
+    add edx, eax
+    .IF SDWORD PTR edx < g_canvasWidth
+        mov eraserToX, edx
+    .ELSE
+        mov edx, g_canvasWidth
+        mov eraserToX, edx
+    .ENDIF
+    mov edx, g_mouseCanvasY
+    add edx, eax
+    .IF SDWORD PTR edx < g_canvasHeight
+        mov eraserToY, edx
+    .ELSE
+        mov edx, g_canvasHeight
+        mov eraserToY, edx
+    .ENDIF
+    
+    invoke CanvasToClientX, eraserLeftCanvas
+    mov eraserLeftCanvas, eax
+    invoke CanvasToClientY, eraserTopCanvas
+    mov eraserTopCanvas, eax
+    invoke CanvasToClientX, eraserFromX
+    .IF SDWORD PTR eax < CANVAS_MARGIN
+        mov eax, CANVAS_MARGIN
+    .endif
+    mov eraserFromX, eax
+    mov canvasFromX, eax
+    invoke CanvasToClientY, eraserFromY
+    .IF SDWORD PTR eax < CANVAS_MARGIN
+        mov eax, CANVAS_MARGIN
+    .endif
+    mov eraserFromY, eax
+    mov canvasFromY, eax
+    invoke CanvasToClientX, eraserToX
+    mov eraserToX, eax
+    invoke CanvasToClientY, eraserToY
+    mov eraserToY, eax
+    
+    mov eax, eraserToX
+    sub eax, eraserFromX
+    mov eraserWidth, eax
+    
+    mov eax, eraserFromX
+    sub eax, eraserLeftCanvas
+    mov eraserFromX, eax
+    
+    mov eax, eraserToY
+    sub eax, eraserFromY
+    mov eraserHeight, eax
+    mov eax, eraserFromY
+    sub eax, eraserTopCanvas
+    mov eraserFromY, eax
+    
+    invoke BitBlt, hdc, canvasFromX, canvasFromY, eraserWidth, eraserHeight, g_hdcEraserBuf, eraserFromX, eraserFromY, SRCCOPY
+    
+    ret
+DrawEraser endp
 
 Render proc hWnd:HWND
     LOCAL hdc:HDC
@@ -1424,20 +1639,19 @@ Render proc hWnd:HWND
     mul ebx
     mov heightAfterZoom, eax
     
-    
-    ;invoke SetBrush, g_hdcBuf
-    ;invoke Rectangle, g_hdcBuf, 10, 10, 100, 100
-    ;invoke Rectangle, g_hdcBuf, 50, 50, 200, 200
-    ;invoke DeleteBrush
-    
     invoke StretchBlt, hdcBuffer, CANVAS_MARGIN, CANVAS_MARGIN, widthAfterZoom, heightAfterZoom, \
            g_hdcBuf, g_canvasOffsetX, g_canvasOffsetY, canvasWidthMinusOffsetX, canvasHeightMinusOffsetY, \
            SRCCOPY
     
+    .IF g_toolbarStatus == IDM_ERASER && g_mouseInCanvas == TRUE
+        invoke UpdateEraser
+        invoke DrawEraser, hdcBuffer
+    .ENDIF  
     invoke BeginPaint, hWnd, addr ps
     mov hdc, eax
     invoke BitBlt, hdc, rect.left, rect.top, rectCanvas.right, rectCanvas.bottom, \
            hdcBuffer, 0, 0, SRCCOPY
+           
     invoke EndPaint, hWnd, addr ps
     invoke DeleteObject, hBitmapBuffer
     invoke DeleteDC, hdcBuffer
@@ -1495,6 +1709,13 @@ UpdateCursor proc
             invoke LoadCursor, g_cursorInst, g_cursor
             invoke SetCursor, eax
         .ENDIF
+    .ENDIF
+    .IF g_mouseInCanvas == 1 && g_toolbarStatus == IDM_ERASER && g_showCursor == 1
+        invoke ShowCursor, FALSE
+        mov g_showCursor, 0
+    .ELSEIF (g_mouseInCanvas != 1 || g_toolbarStatus != IDM_ERASER) && g_showCursor == 0
+        invoke ShowCursor, TRUE
+        mov g_showCursor, 1
     .ENDIF
     ret
 UpdateCursor endp
@@ -1560,16 +1781,17 @@ CalculateSquare proc USES esi,
 CalculateSquare endp
 
 HandleLButtonDownMessage proc wParam:WPARAM
+    LOCAL eraserRect:RECT
     invoke StartCapture
     .IF g_toolbarStatus == IDM_PENCIL
         invoke StartDrawing
-        invoke SetPen, g_hdcBuf
-        .IF g_penWidth == 1
-            invoke SetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, g_foregroundColor
-        .ELSE
+        invoke SetRectanglePen, g_hdcBuf, g_foregroundColor, g_penWidth
+        ;.IF g_penWidth == 1
+        ;    invoke SetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, g_foregroundColor
+        ;.ELSE
             invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
             invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
-        .ENDIF
+        ;.ENDIF
         invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
@@ -1588,6 +1810,24 @@ HandleLButtonDownMessage proc wParam:WPARAM
         invoke FillWithBarrel, g_foregroundColor
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         invoke StopDrawing, TRUE
+    .ELSEIF g_toolbarStatus == IDM_ERASER
+        invoke StartDrawing
+        invoke SetRectanglePen, g_hdcBuf, g_backgroundColor, g_eraserWidth
+        mov eax, g_eraserWidth
+        shr eax, 1
+        mov edx, g_mouseCanvasX
+        sub edx, eax
+        mov eraserRect.left, edx
+        add edx, g_eraserWidth
+        mov eraserRect.right, edx
+        mov edx, g_mouseCanvasY
+        sub edx, eax
+        mov eraserRect.top, edx
+        add edx, g_eraserWidth
+        mov eraserRect.bottom, edx
+        invoke FillRect, g_hdcBuf, addr eraserRect, g_brush
+        invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ENDIF
     ret
 HandleLButtonDownMessage endp
@@ -1662,6 +1902,11 @@ HandleMouseMoveMessage proc wParam:WPARAM
                 invoke RoundRect, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, x2, y2, g_roundRectWidth, g_roundRectHeight
             .endif
             invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF g_toolbarStatus == IDM_ERASER
+            invoke MoveToEx, g_hdcBuf, g_previousPoint.x, g_previousPoint.y, NULL
+            invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
+            invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         .ENDIF
     .ENDIF
     .IF g_toolbarStatus == IDM_COLOR_PICKER
@@ -1680,10 +1925,11 @@ HandleMouseMoveMessage proc wParam:WPARAM
 HandleMouseMoveMessage endp
 
 HandleLButtonUpMessage proc wParam:WPARAM
+    LOCAL eraserRect:RECT
     invoke ReleaseCapture
     invoke UpdateCursor
     .IF g_toolbarStatus == IDM_PENCIL
-        invoke DeletePen
+        invoke DeleteRectanglePen
         invoke StopDrawing, TRUE
     .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
         invoke DeletePen
@@ -1701,6 +1947,22 @@ HandleLButtonUpMessage proc wParam:WPARAM
         .ELSE
             invoke StopDrawing, TRUE
         .endif
+    .ELSEIF g_toolbarStatus == IDM_ERASER
+        mov eax, g_eraserWidth
+        shr eax, 1
+        mov edx, g_mouseCanvasX
+        sub edx, eax
+        mov eraserRect.left, edx
+        add edx, g_eraserWidth
+        mov eraserRect.right, edx
+        mov edx, g_mouseCanvasY
+        sub edx, eax
+        mov eraserRect.top, edx
+        add edx, g_eraserWidth
+        mov eraserRect.bottom, edx
+        invoke FillRect, g_hdcBuf, addr eraserRect, g_brush
+        invoke DeleteRectanglePen
+        invoke StopDrawing, TRUE
     .ENDIF
     invoke StopCapture
     ret
@@ -1791,6 +2053,8 @@ CanvasWinProc proc USES ebx esi,
         invoke UpdateCursor
         .IF g_isCapturing == TRUE
             invoke HandleMouseMoveMessage, wParam
+        .ELSEIF g_toolbarStatus == IDM_ERASER
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         .ENDIF
     .ELSEIF uMsg == WM_LBUTTONUP
         .IF g_isCapturing == TRUE
@@ -1809,6 +2073,9 @@ CanvasWinProc proc USES ebx esi,
         mov g_mouseTracking, 0
         invoke UpdateStatusBarMouseCoordinate
         invoke UpdateCursor
+        .IF g_toolbarStatus == IDM_ERASER
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ENDIF
     .ELSEIF uMsg == WM_SETCURSOR
         invoke UpdateCursor
     .ELSEIF uMsg == WM_ERASEBKGND
