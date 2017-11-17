@@ -1973,7 +1973,6 @@ SavePoint proc USES esi, x:DWORD, y:DWORD
         mov eax, g_currentPointSize
         inc eax
         mov g_currentPointSize, eax
-        invoke crt_printf, offset debugPrintInt,g_currentPointSize 
         mov eax, 1
     .ELSE
         mov eax, 0
@@ -2065,12 +2064,8 @@ HandleLButtonDownMessage proc wParam:WPARAM
     .IF g_toolbarStatus == IDM_PENCIL
         invoke StartDrawing
         invoke SetRectanglePen, g_hdcBuf, g_foregroundColor, g_penWidth
-        ;.IF g_penWidth == 1
-        ;    invoke SetPixel, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, g_foregroundColor
-        ;.ELSE
             invoke MoveToEx, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY, NULL
             invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
-        ;.ENDIF
         invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ELSEIF g_toolbarStatus == IDM_STRAIGHT_LINE
@@ -2112,10 +2107,8 @@ HandleLButtonDownMessage proc wParam:WPARAM
             invoke SetPen, g_hdcBuf
             invoke StartDrawing
             invoke SavePoint, g_mouseCanvasX, g_mouseCanvasY
-            invoke crt_printf, offset debugPrintInt, g_currentPointSize
         .ELSE
-            
-            invoke crt_printf, offset debugPrintInt, g_currentPointSize
+            invoke RestoreHdcBuffer
             .IF g_currentPointSize == 2
                 mov eax, g_mouseCanvasX
                 mov p1.x, eax
