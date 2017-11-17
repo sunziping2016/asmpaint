@@ -5,6 +5,7 @@ include asmpaint.Inc
 
 UpdateScrollBarSize proto
 UpdateCursor proto
+UpdateZoom proto mode:DWORD, value:DWORD, canvasX:SDWORD, canvasY:SDWORD
 
 ; TODO: isModified change to saved index
 
@@ -79,9 +80,8 @@ UndoRedo ends
     toolBarMenuItemHelpMessage BYTE "显示或隐藏左侧工具栏.", 0
     statusBarMenuItemHelpMessage BYTE "显示或隐藏状态栏.", 0
     zoomDefaultMenuItemHelpMessage BYTE "默认缩放比例100%.", 0
-    zoomLargeMenuItemHelpMessage BYTE "放大图像.", 0
-    zoomCustomeMenuItemHelpMessage BYTE "自定义缩放比例.", 0
-    toolMenuItemHelpMessage BYTE "图像工具.", 0
+    zoomLargerMenuItemHelpMessage BYTE "放大图像.", 0
+    zoomSmallerMenuItemHelpMessage BYTE "缩小图像.", 0
     penWidth1MenuItemHelpMessage BYTE "画笔宽度1像素.", 0
     penWidth2MenuItemHelpMessage BYTE "画笔宽度2像素.", 0
     penWidth3MenuItemHelpMessage BYTE "画笔宽度3像素.", 0
@@ -120,33 +120,33 @@ UndoRedo ends
     foregroundColorHelpMessage BYTE "设置前景色.", 0
     backgroundColorHelpMessage BYTE "设置背景色.", 0
     
-    welcomeMessage BYTE "欢迎!", 0
+    welcomeMessage BYTE "欢迎使用我们的画图软件!", 0
     
     idms DWORD IDM_NEW, IDM_OPEN, IDM_SAVE, IDM_SAVEAS, IDM_EXIT, IDM_UNDO, IDM_REDO, IDM_TOOLBAR, IDM_STATUSBAR
-    DWORD IDM_ZOOM_DEFAULT, IDM_ZOOM_LARGE, IDM_ZOOM_CUSTOM, IDM_TOOL, IDM_PEN_WIDTH1, IDM_PEN_WIDTH2, IDM_PEN_WIDTH3
-    DWORD IDM_PEN_WIDTH4, IDM_PEN_WIDTH5, IDM_PEN_WIDTH6, IDM_FILL_DEFAULT, IDM_FILL_NOBRUSH, IDM_FILL_NOPEN, IDM_ERASER_SIZE1
-    DWORD IDM_ERASER_SIZE2, IDM_ERASER_SIZE3, IDM_ERASER_SIZE4, IDM_ERASER_SIZE5, IDM_CLEAR, IDM_PROPERTY, IDM_HELP
-    DWORD IDM_ABOUT, IDM_FREE_SELECTOR, IDM_RECT_SELECTOR, IDM_ERASER, IDM_PAINT_BARREL, IDM_COLOR_PICKER, IDM_MAGNIFIER
-    DWORD IDM_PENCIL, IDM_BRUSH, IDM_AIRBRUSH, IDM_TEXT, IDM_STRAIGHT_LINE, IDM_CURVE, IDM_RECTANGLE
-    DWORD IDM_POLYGON, IDM_ELLIPSE, IDM_ROUNDED_RECTANGLE, IDM_FOREGROUND_COLOR, IDM_BACKGROUND_COLOR
-    idmsLen DWORD 49
+         DWORD IDM_ZOOM_DEFAULT, IDM_ZOOM_LARGER, IDM_ZOOM_SMALLER, IDM_PEN_WIDTH1, IDM_PEN_WIDTH2, IDM_PEN_WIDTH3
+         DWORD IDM_PEN_WIDTH4, IDM_PEN_WIDTH5, IDM_PEN_WIDTH6, IDM_FILL_DEFAULT, IDM_FILL_NOBRUSH, IDM_FILL_NOPEN, IDM_ERASER_SIZE1
+         DWORD IDM_ERASER_SIZE2, IDM_ERASER_SIZE3, IDM_ERASER_SIZE4, IDM_ERASER_SIZE5, IDM_CLEAR, IDM_PROPERTY, IDM_HELP
+         DWORD IDM_ABOUT, IDM_FREE_SELECTOR, IDM_RECT_SELECTOR, IDM_ERASER, IDM_PAINT_BARREL, IDM_COLOR_PICKER, IDM_MAGNIFIER
+         DWORD IDM_PENCIL, IDM_BRUSH, IDM_AIRBRUSH, IDM_TEXT, IDM_STRAIGHT_LINE, IDM_CURVE, IDM_RECTANGLE
+         DWORD IDM_POLYGON, IDM_ELLIPSE, IDM_ROUNDED_RECTANGLE, IDM_FOREGROUND_COLOR, IDM_BACKGROUND_COLOR
+    idmsLen DWORD 48
     helpMessages DWORD offset newMenuItemHelpMessage, offset openMenuItemHelpMessage, offset saveMenuItemHelpMessage
-    DWORD offset saveAsMenuItemHelpMessage, offset exitMenuItemHelpMessage, offset undoMenuItemHelpMessage
-    DWORD offset redoMenuItemHelpMessage, offset toolBarMenuItemHelpMessage, offset statusBarMenuItemHelpMessage
-    DWORD offset zoomDefaultMenuItemHelpMessage, offset zoomLargeMenuItemHelpMessage, offset zoomCustomeMenuItemHelpMessage
-    DWORD offset toolMenuItemHelpMessage, offset penWidth1MenuItemHelpMessage, offset penWidth2MenuItemHelpMessage
-    DWORD offset penWidth3MenuItemHelpMessage, offset penWidth4MenuItemHelpMessage, offset penWidth5MenuItemHelpMessage
-    DWORD offset penWidth6MenuItemHelpMessage, offset fillDefaultMenuItemHelpMessage, offset fillNoBrushMenuItemHelpMessage
-    DWORD offset fillNoPenMenuItemHelpMessage, offset eraserSize1MenuItemHelpMessage, offset eraserSize2MenuItemHelpMessage
-    DWORD offset eraserSize3MenuItemHelpMessage, offset eraserSize4MenuItemHelpMessage, offset eraserSize5MenuItemHelpMessage
-    DWORD offset clearMenuItemHelpMessage, offset propertyMenuItemHelpMessage, offset helpMenuItemHelpMessage
-    DWORD offset aboutMenuItemHelpMessage, offset freeSelectorHelpMessage, offset rectSelectorHelpMessage
-    DWORD offset erasorSelectorHelpMessage, offset paintBarrelHelpMessage, offset colorPickerHelpMessage
-    DWORD offset magnifierHelpMessage, offset pencilHelpMessage, offset brushHelpMessage
-    DWORD offset airBrushHelpMessage, offset textHelpMessage, offset straightLineHelpMessage
-    DWORD offset curveHelpMessage, offset rectangleHelpMessage, offset polygonHelpMessage
-    DWORD offset ellipseHelpMessage, offset roundedRectangleMessage, offset foregroundColorHelpMessage
-    DWORD offset backgroundColorHelpMessage
+                 DWORD offset saveAsMenuItemHelpMessage, offset exitMenuItemHelpMessage, offset undoMenuItemHelpMessage
+                 DWORD offset redoMenuItemHelpMessage, offset toolBarMenuItemHelpMessage, offset statusBarMenuItemHelpMessage
+                 DWORD offset zoomDefaultMenuItemHelpMessage, offset zoomLargerMenuItemHelpMessage, offset zoomSmallerMenuItemHelpMessage
+                 DWORD offset penWidth1MenuItemHelpMessage, offset penWidth2MenuItemHelpMessage
+                 DWORD offset penWidth3MenuItemHelpMessage, offset penWidth4MenuItemHelpMessage, offset penWidth5MenuItemHelpMessage
+                 DWORD offset penWidth6MenuItemHelpMessage, offset fillDefaultMenuItemHelpMessage, offset fillNoBrushMenuItemHelpMessage
+                 DWORD offset fillNoPenMenuItemHelpMessage, offset eraserSize1MenuItemHelpMessage, offset eraserSize2MenuItemHelpMessage
+                 DWORD offset eraserSize3MenuItemHelpMessage, offset eraserSize4MenuItemHelpMessage, offset eraserSize5MenuItemHelpMessage
+                 DWORD offset clearMenuItemHelpMessage, offset propertyMenuItemHelpMessage, offset helpMenuItemHelpMessage
+                 DWORD offset aboutMenuItemHelpMessage, offset freeSelectorHelpMessage, offset rectSelectorHelpMessage
+                 DWORD offset erasorSelectorHelpMessage, offset paintBarrelHelpMessage, offset colorPickerHelpMessage
+                 DWORD offset magnifierHelpMessage, offset pencilHelpMessage, offset brushHelpMessage
+                 DWORD offset airBrushHelpMessage, offset textHelpMessage, offset straightLineHelpMessage
+                 DWORD offset curveHelpMessage, offset rectangleHelpMessage, offset polygonHelpMessage
+                 DWORD offset ellipseHelpMessage, offset roundedRectangleMessage, offset foregroundColorHelpMessage
+                 DWORD offset backgroundColorHelpMessage
 
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
@@ -191,8 +191,8 @@ UndoRedo ends
     g_mouseTracking DWORD 0
     
     FILL_DEFAULT equ 0
-    FILL_WITHOUT_BORDER equ 1
-    FILL_WITHOUT_FILL equ 2
+    FILL_WITHOUT_FILL equ 1
+    FILL_WITHOUT_BORDER equ 2
     g_fillType DWORD FILL_DEFAULT
     g_penWidth DWORD 1
     g_eraserWidth DWORD 4
@@ -226,6 +226,18 @@ UndoRedo ends
     g_isMenuOpened DWORD 0
     
     MAX_HEIGHT_WIDTH equ 4096
+    
+    menuGroupTool DWORD IDM_FREE_SELECTOR, IDM_RECT_SELECTOR, IDM_ERASER
+                  DWORD IDM_PAINT_BARREL, IDM_COLOR_PICKER, IDM_MAGNIFIER
+                  DWORD IDM_PENCIL, IDM_BRUSH, IDM_AIRBRUSH, IDM_TEXT
+                  DWORD IDM_STRAIGHT_LINE, IDM_CURVE, IDM_RECTANGLE
+                  DWORD IDM_POLYGON, IDM_ELLIPSE, IDM_ROUNDED_RECTANGLE
+                  DWORD IDM_FOREGROUND_COLOR, IDM_BACKGROUND_COLOR, 0
+    menuGroupPenWidth DWORD IDM_PEN_WIDTH1, IDM_PEN_WIDTH2, IDM_PEN_WIDTH3
+                      DWORD IDM_PEN_WIDTH4, IDM_PEN_WIDTH5, IDM_PEN_WIDTH6, 0
+    menuGroupFill DWORD IDM_FILL_DEFAULT, IDM_FILL_NOBRUSH, IDM_FILL_NOPEN, 0
+    menuGroupEraserSize DWORD IDM_ERASER_SIZE1, IDM_ERASER_SIZE2, IDM_ERASER_SIZE3
+                        DWORD IDM_ERASER_SIZE4, IDM_ERASER_SIZE5, 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -414,6 +426,37 @@ UpdateUndoRedoMenu proc
     .ENDIF
     ret
 UpdateUndoRedoMenu endp
+
+UpdateCheckMenu proc uses esi, menuGroup:DWORD, checkedItem:DWORD
+    mov esi, menuGroup
+    mov eax, [esi]
+    .WHILE eax != 0
+        .IF eax == checkedItem
+            invoke CheckMenuItem, g_hMenu, eax, MF_BYCOMMAND or MF_CHECKED
+        .ELSE
+            invoke CheckMenuItem, g_hMenu, eax, MF_BYCOMMAND or MF_UNCHECKED
+        .ENDIF
+        add esi, 4
+        mov eax, [esi]
+    .ENDW
+    ret
+UpdateCheckMenu endp
+
+UpdateZoomMenu proc
+    .IF g_zoom == 1
+        invoke EnableMenuItem, g_hMenu, IDM_ZOOM_DEFAULT, MF_BYCOMMAND or MF_DISABLED
+        invoke EnableMenuItem, g_hMenu, IDM_ZOOM_SMALLER, MF_BYCOMMAND or MF_DISABLED
+    .ELSE
+        invoke EnableMenuItem, g_hMenu, IDM_ZOOM_DEFAULT, MF_BYCOMMAND or MF_ENABLED
+        invoke EnableMenuItem, g_hMenu, IDM_ZOOM_SMALLER, MF_BYCOMMAND or MF_ENABLED
+    .ENDIF
+    .IF g_zoom == MAX_ZOOM
+        invoke EnableMenuItem, g_hMenu, IDM_ZOOM_LARGER, MF_BYCOMMAND or MF_DISABLED
+    .ELSE
+        invoke EnableMenuItem, g_hMenu, IDM_ZOOM_LARGER, MF_BYCOMMAND or MF_ENABLED
+    .ENDIF    
+    ret
+UpdateZoomMenu endp
 
 MakeBitmapCopy proc, hdc:HDC, nWidth:DWORD, nHeight:DWORD
     LOCAL hWinDC:HDC
@@ -1261,9 +1304,57 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                     invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
                 .ENDIF
             .ENDIF
-        .ELSEIF eax >= IDM_TOOLBAR_FIRST && eax <=IDM_TOOLBAR_LAST
-            mov eax, wParam
-            mov g_toolbarStatus, eax
+        .ELSEIF eax >= IDM_FREE_SELECTOR && eax <= IDM_ROUNDED_RECTANGLE
+            .IF g_toolbarStatus != eax
+                mov ebx, eax
+                invoke SendMessage, g_hWndControl, TB_GETSTATE, g_toolbarStatus, 0
+                and eax, 0ffffffffh - TBSTATE_CHECKED
+                invoke SendMessage, g_hWndControl, TB_SETSTATE, g_toolbarStatus, eax
+                mov g_toolbarStatus, ebx
+                invoke SendMessage, g_hWndControl, TB_GETSTATE, g_toolbarStatus, 0
+                or eax, TBSTATE_CHECKED
+                invoke SendMessage, g_hWndControl, TB_SETSTATE, g_toolbarStatus, eax
+                invoke UpdateCheckMenu, offset menuGroupTool, g_toolbarStatus
+            .ENDIF
+            invoke UpdateCursor
+        .ELSEIF eax >= IDM_PEN_WIDTH1 && eax <= IDM_PEN_WIDTH6
+            mov ebx, eax
+            .IF ebx != IDM_PEN_WIDTH6
+                sub eax, IDM_PEN_WIDTH1 - 1
+                mov g_penWidth, eax
+            .ELSE
+            .ENDIF
+            invoke UpdateCheckMenu, offset menuGroupPenWidth, ebx
+        .ELSEIF eax >= IDM_FILL_DEFAULT && eax <= IDM_FILL_NOPEN
+            mov ebx, eax
+            sub eax, IDM_FILL_DEFAULT
+            mov g_fillType, eax
+            invoke UpdateCheckMenu, offset menuGroupFill, ebx
+        .ELSEIF eax >= IDM_ERASER_SIZE1 && eax <= IDM_ERASER_SIZE5
+            mov ebx, eax
+            .IF ebx != IDM_ERASER_SIZE1
+                sub eax, IDM_ERASER_SIZE1 - 2
+                shl eax, 1
+                mov g_eraserWidth, eax
+                invoke crt_printf, offset debugPrintInt, g_eraserWidth
+            .ELSE
+            .ENDIF
+            invoke UpdateCheckMenu, offset menuGroupEraserSize, ebx
+        .ELSEIF eax == IDM_ZOOM_DEFAULT || eax == IDM_ZOOM_LARGER || eax == IDM_ZOOM_SMALLER
+            .IF eax == IDM_ZOOM_DEFAULT
+                mov eax, 1
+            .ELSEIF eax == IDM_ZOOM_LARGER
+                mov eax, g_zoom
+                .IF g_zoom != MAX_ZOOM
+                    inc eax
+                .ENDIF
+            .ELSE
+                mov eax, g_zoom
+                .IF g_zoom != 1
+                    dec eax
+                .ENDIF
+            .ENDIF
+            invoke UpdateZoom, 0, eax, g_mouseCanvasX, g_mouseCanvasY
         .ENDIF
     .ELSEIF uMsg == WM_MENUSELECT
         .IF wParam == 0ffff0000h
@@ -1530,6 +1621,7 @@ UpdateZoom proc uses ebx, mode:DWORD, value:DWORD, canvasX:SDWORD, canvasY:SDWOR
         mov ecx, SCROLL_STEP_PIXEL
         idiv ecx
         invoke UpdateScrollPosition, 1, 1, eax
+        invoke UpdateZoomMenu
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ENDIF
     ret
@@ -2123,6 +2215,7 @@ CanvasWinProc proc USES ebx esi,
         invoke SaveUndoRedo
         invoke MarkSaved
         invoke UpdateSaveMenu
+        invoke UpdateZoomMenu
         invoke DragAcceptFiles, hWnd, TRUE
         invoke CanvasTrackMouse
     .ELSEIF uMsg == WM_SIZE
