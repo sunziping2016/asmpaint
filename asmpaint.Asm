@@ -6,6 +6,8 @@ include asmpaint.Inc
 UpdateScrollBarSize proto
 UpdateCursor proto
 
+; TODO: isModified change to saved index
+
 UndoRedo struct
     hBitmap HBITMAP ?
     isModified DWORD ?
@@ -56,14 +58,17 @@ UndoRedo ends
     
     aboutDialogText BYTE "由车行、孙子平、赵尚明协作开发完成。", 0ah, "以及，辣鸡大作孽，毁我青春，掉我头发！", 0
     aboutDialogName BYTE "关于", 0
-    
+
+
+    mainWindowModifiedTitle BYTE "*%s - 画图", 0
+    mainWindowNoModifiedTitle BYTE "%s - 画图", 0
+
     MAX_FILE_NAME_SIZE equ 256
     MAX_ZOOM equ 8
 
     saveFileDialogName BYTE "另存为", 0
     defaultSaveAsName BYTE "无标题.bmp", 0
     g_bitmapName BYTE MAX_FILE_NAME_SIZE dup(0)
-    g_title BYTE "无标题", MAX_FILE_NAME_SIZE dup(0)
 
     DEFAULT_CANVAS_WIDTH equ 800
     DEFAULT_CANVAS_HEIGHT equ 600
@@ -85,7 +90,8 @@ UndoRedo ends
 
     debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
     debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
-    debugPrintInt BYTE "%d", 0ah, 0
+    debugPrintInt BYTE "%x", 0ah, 0
+    debugHelp BYTE "menu: %u (dropdown: %d)",0ah,0
 
     g_toolbarStatus DWORD IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
@@ -124,11 +130,13 @@ UndoRedo ends
 
     g_hasToolbar DWORD 1
     g_hasStatusBar DWORD 1
-    
+
     g_undoRedoCurr DWORD 0
     g_undoRedoSize DWORD 0
 
     g_showCursor DWORD 1
+
+    g_isMenuOpened DWORD 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -234,6 +242,24 @@ RestoreHdcBuffer proc
     ret
 RestoreHdcBuffer endp
 
+UpdateMainWindowTitle proc
+    LOCAL text[MAX_PATH]:BYTE
+    .IF g_bitmapName == 0
+        invoke crt_strcpy, addr text, offset defaultSaveAsName
+    .ELSE
+        invoke crt_strcpy, addr text, offset g_bitmapName
+    .ENDIF
+    invoke PathStripPath, addr text
+    invoke PathRemoveExtension, addr text
+    .IF g_isModified == 0
+        invoke crt_sprintf, addr g_textBuffer, addr mainWindowNoModifiedTitle, addr text
+    .ELSE
+        invoke crt_sprintf, addr g_textBuffer, addr mainWindowModifiedTitle, addr text
+    .ENDIF
+    invoke SetWindowText, g_hWnd, addr g_textBuffer
+    ret
+UpdateMainWindowTitle endp
+
 LoadUndoRedoCurr proc uses esi
     LOCAL hdc:HDC
 
@@ -255,10 +281,11 @@ LoadUndoRedoCurr proc uses esi
         invoke GetDC, g_hWnd
         mov hdc, eax
         invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
-        mov g_hdcDrawingBitmap, eax
+        mov g_hdcBitmap, eax
         invoke ReleaseDC, g_hWnd, hdc
         invoke SelectObject, g_hdcBuf, g_hdcBitmap
     .ENDIF
+    invoke UpdateMainWindowTitle
     ret
 LoadUndoRedoCurr endp
 
@@ -340,15 +367,24 @@ ClearCanvas proc
     ret
 ClearCanvas endp
 
+InitCanvas proc
+    LOCAL hdc: HDC
+    invoke GetDC, g_hWnd
+    mov hdc, eax    
+    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
+    mov g_hdcBitmap, eax
+    invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    invoke ReleaseDC, g_hWnd, hdc    
+    ret
+InitCanvas endp
+
 InitUndoRedo proc
     LOCAL hdc: HDC
     invoke GetDC, g_hWnd
     mov hdc, eax
     invoke CreateCompatibleDC, hdc
     mov g_hdcBuf, eax
-    invoke CreateCompatibleBitmap, hdc, g_canvasWidth, g_canvasHeight
-    mov g_hdcBitmap, eax
-    invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    invoke InitCanvas
     invoke CreateCompatibleDC, hdc
     mov g_hdcDrawingBuf, eax    
     invoke ReleaseDC, g_hWnd, hdc
@@ -388,8 +424,7 @@ StartDrawing proc
     ret
 StartDrawing endp
 
-StopDrawing proc applyChange:DWORD ;Bool
-    
+StopDrawing proc applyChange:DWORD ;Bool    
     .IF applyChange == TRUE
         mov g_isModified, TRUE
         invoke SaveUndoRedo
@@ -511,7 +546,7 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     .IF eax == NULL
         invoke MessageBox, g_hWnd, offset cannotOpenFileDialogText, offset cannotOpenFileDialogTitle, MB_OK or MB_ICONEXCLAMATION
         ret
-    .endif
+    .ENDIF
     invoke crt_strcpy, offset g_bitmapName, pfilename
     invoke GetObject, bitmapHandle, SIZEOF bm, addr bm
     mov eax, bm.bmWidth
@@ -525,6 +560,7 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     invoke ClearUndoRedo
     invoke SaveUndoRedo
     invoke UpdateScrollBarSize
+    invoke UpdateMainWindowTitle
     invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     ret
 LoadBitmapFromFile endp
@@ -608,7 +644,7 @@ SaveBitmapFile proc USES ebx
     LOCAL cb:DWORD
     LOCAL hp:PTR
     LOCAL dwTmp:DWORD
-    
+
     invoke CreateBitmapInfoStruct
     mov pbi, eax
     mov pbih, eax
@@ -648,6 +684,8 @@ SaveBitmapFile proc USES ebx
     invoke GlobalFree, lpBits
     invoke LocalFree, pbi
     mov g_isModified, 0
+    
+    invoke UpdateMainWindowTitle
     ret
 SaveBitmapFile endp
 
@@ -655,9 +693,9 @@ SaveBitmapFile endp
 OpenSaveBitmapDialog proc
     LOCAL openFileStruct:OPENFILENAME
     .IF g_bitmapName == 0
-        invoke crt_strcpy, addr g_textBuffer, offset defaultSaveAsName
+        invoke crt_strcpy, offset g_textBuffer, offset defaultSaveAsName
     .ELSE
-        invoke crt_strcpy, addr g_textBuffer, offset g_bitmapName
+        invoke crt_strcpy, offset g_textBuffer, offset g_bitmapName
     .ENDIF
     mov openFileStruct.lStructSize, SIZEOF openFileStruct
     mov eax, g_hWnd
@@ -677,7 +715,7 @@ OpenSaveBitmapDialog proc
     mov openFileStruct.lpstrDefExt, NULL
     invoke GetSaveFileName, addr openFileStruct
     .IF eax != NULL
-        invoke crt_strcpy, offset g_bitmapName, addr g_textBuffer
+        invoke crt_strcpy, offset g_bitmapName, offset g_textBuffer
         mov eax, 1
     .endif
     ret
@@ -778,6 +816,20 @@ ConfirmSaveModify proc
     ret
 ConfirmSaveModify endp
 
+UpdateStatusBarInfo proc, id:DWORD
+    invoke crt_printf, offset debugHelp, id, g_isMenuOpened
+    ; g_textBuffer
+    .IF id != 0
+        ; display help message
+    .ELSEIF g_isMenuOpened != 0
+        ; display empty message
+        mov g_textBuffer, 0
+    .ELSE
+        ; display welcome message
+    .ENDIF
+    ret
+UpdateStatusBarInfo endp
+
 UpdateStatusBarSize proc
     LOCAL clientRect:RECT
     LOCAL statusBarEdges[4]:DWORD
@@ -805,10 +857,18 @@ UpdateStatusBarSize proc
     ret
 UpdateStatusBarSize endp
 
+PropertyDialogProc proc hWin:HWND,uMsg:UINT,wParam:WPARAM,lParam:LPARAM
+	xor    eax,eax
+	.IF uMsg == WM_COMMAND
+	    invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+	.ENDIF
+	ret
+PropertyDialogProc endp
+
+
 WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
     LOCAL canvasWndRect:RECT
-    LOCAL filenameTemp[MAX_FILE_NAME_SIZE]:BYTE
 
     .IF uMsg == WM_DESTROY
         invoke PostQuitMessage, 0
@@ -844,6 +904,7 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                0, 0, 0, 0, \
                hWnd, NULL, g_hInst, NULL        
         invoke UpdateCanvasWindowPosition
+        invoke UpdateStatusBarInfo, 0
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
@@ -861,9 +922,9 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                     jmp DontOpenFile
                 .endif
             .ENDIF
-            invoke OpenOpenBitmapDialog, g_hWnd, addr filenameTemp
+            invoke OpenOpenBitmapDialog, g_hWnd, addr g_textBuffer
             .IF eax != NULL
-                invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
+                invoke LoadBitmapFromFile, g_hWndCanvas, addr g_textBuffer
             .endif
             DontOpenFile:
         .ELSEIF eax == IDM_NEW
@@ -877,10 +938,13 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             mov g_canvasHeight, DEFAULT_CANVAS_HEIGHT
             mov g_isModified, 0
             mov g_bitmapName, 0
+            invoke DeleteObject, g_hdcBitmap
+            invoke InitCanvas
             invoke ClearCanvas
             invoke ClearUndoRedo
             invoke SaveUndoRedo
             invoke UpdateScrollBarSize
+            invoke UpdateMainWindowTitle
             invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
             DontNewCanvas:
         .ELSEIF eax == IDM_SAVE
@@ -948,12 +1012,37 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke PromptColor, 1
         .ELSEIF eax == IDM_ABOUT
             invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
+        .ELSEIF eax == IDM_PROPERTY
+            invoke DialogBoxParam, g_hInst, IDD_PROPERTY, g_hWnd, offset PropertyDialogProc, 0
         .ELSEIF eax >= IDM_TOOLBAR_FIRST && eax <=IDM_TOOLBAR_LAST
             mov eax, wParam
             mov g_toolbarStatus, eax
         .ENDIF
+    .ELSEIF uMsg == WM_MENUSELECT
+        .IF wParam == 0ffff0000h
+            mov g_isMenuOpened, 0
+            invoke UpdateStatusBarInfo, 0
+        .ELSE
+            mov eax, wParam
+            shr eax, 16
+            and eax, MF_POPUP
+            .IF eax == 0
+                mov eax, wParam
+                movzx eax, ax
+                invoke UpdateStatusBarInfo, eax
+            .ELSE
+                mov g_isMenuOpened, 1
+                invoke UpdateStatusBarInfo, 0
+            .ENDIF
+        .ENDIF
+    .ELSEIF uMsg == WM_NOTIFY
+        mov edx, lParam
+        mov eax, (NMHDR ptr [edx]).code
+        .IF eax == TBN_HOTITEMCHANGE
+            invoke UpdateStatusBarInfo, (NMTBHOTITEM ptr [edx]).idNew
+        .ENDIF
     .ELSEIF uMsg == WM_DROPFILES
-    	invoke DragQueryFile, wParam, 0, addr filenameTemp, MAX_FILE_NAME_SIZE
+    	invoke DragQueryFile, wParam, 0, addr g_textBuffer, MAX_FILE_NAME_SIZE
     	.IF eax != 0
     	    .IF g_isModified == TRUE
     	        invoke ConfirmSaveModify
@@ -961,7 +1050,7 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                     jmp DontOpenDropFile
                 .endif
             .ENDIF
-    	    invoke LoadBitmapFromFile, g_hWndCanvas, addr filenameTemp
+    	    invoke LoadBitmapFromFile, g_hWndCanvas, addr g_textBuffer
     	.ENDIF
     	DontOpenDropFile:
     .ELSEIF uMsg == WM_CLOSE
@@ -1049,7 +1138,7 @@ UpdateMousePos proc
 UpdateMousePos endp
 
 UpdateStatusBarMouseCoordinate proc
-    .IF g_mouseInCanvas != 0
+    .IF g_mouseInCanvas == 1 || g_isDrawing == 1
         invoke crt_sprintf, addr g_textBuffer, offset coordinateFormat, g_mouseCanvasX, g_mouseCanvasY
     .ELSE
         mov al, 0
@@ -1169,19 +1258,32 @@ UpdateScrollBarSize proc USES ebx
     ret
 UpdateScrollBarSize endp
 
-UpdateZoom proc mode:DWORD, value:DWORD
+UpdateZoom proc uses ebx, mode:DWORD, value:DWORD, canvasX:SDWORD, canvasY:SDWORD
     ; TODO: set scroll center
     ; mode: 0 value, 1 delta
-    .IF mode == 0
-        mov eax, value
-    .ELSEIF mode == 1
-        mov eax, g_zoom
-        add eax, value
+    LOCAL zoomDelta:SWORD
+    .IF mode == 1
+        mov ebx, g_zoom
+        add ebx, value
+    .ELSE
+        mov ebx, value
     .ENDIF
-    .IF eax != 0 && eax <= MAX_ZOOM && eax != g_zoom
-        mov g_zoom, eax
-        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .IF ebx != 0 && ebx <= MAX_ZOOM && ebx != g_zoom
+        mov eax, g_zoom
+        mov g_zoom, ebx
+        sub ebx, eax
         invoke UpdateScrollBarSize
+        mov eax, canvasY
+        imul ebx
+        mov ecx, SCROLL_STEP_PIXEL
+        idiv ecx
+        invoke UpdateScrollPosition, 0, 1, eax
+        mov eax, canvasX
+        imul ebx
+        mov ecx, SCROLL_STEP_PIXEL
+        idiv ecx
+        invoke UpdateScrollPosition, 1, 1, eax
+        invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
     .ENDIF
     ret
 UpdateZoom endp
@@ -1820,7 +1922,7 @@ CanvasWinProc proc USES ebx esi,
             neg eax
             invoke UpdateScrollPosition, 0, 1, eax
         .ELSE
-            invoke UpdateZoom, 1, eax            
+            invoke UpdateZoom, 1, eax, g_mouseCanvasX, g_mouseCanvasY
         .ENDIF
     .ELSEIF uMsg == WM_PAINT
         invoke Render, hWnd

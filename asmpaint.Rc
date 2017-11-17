@@ -1,3 +1,4 @@
 #include "Res/asmpaintMnu.rc"
+#include "Res/PropertyDlg.rc"
 #include "Res/asmpaintAcl.rc"
 #include "Res/asmpaintRes.rc"
