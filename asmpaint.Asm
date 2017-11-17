@@ -1410,7 +1410,20 @@ UpdateZoom proc uses ebx, mode:DWORD, value:DWORD, canvasX:SDWORD, canvasY:SDWOR
     ret
 UpdateZoom endp
 
+DeleteBrush proc
+    .IF g_pen != NULL
+        invoke DeleteObject, g_pen
+        mov g_pen, NULL
+    .endif
+    .IF g_brush != NULL
+        invoke DeleteObject, g_brush
+        mov g_brush, NULL
+    .endif
+    ret
+DeleteBrush endp
+
 SetPen proc hdc:HDC
+    invoke DeleteBrush
     invoke CreatePen, PS_SOLID, g_penWidth, g_foregroundColor
     mov g_pen, eax
     invoke SelectObject, hdc, eax
@@ -1426,6 +1439,7 @@ DeletePen proc
 DeletePen endp
 
 SetBrush proc hdc:HDC
+    invoke DeleteBrush
     .IF g_fillType == FILL_WITHOUT_BORDER
         invoke GetStockObject, NULL_PEN
         mov g_pen, eax
@@ -1446,18 +1460,6 @@ SetBrush proc hdc:HDC
     ret
 SetBrush endp
 
-DeleteBrush proc
-    .IF g_pen != NULL
-        invoke DeleteObject, g_pen
-        mov g_pen, NULL
-    .endif
-    .IF g_brush != NULL
-        invoke DeleteObject, g_brush
-        mov g_brush, NULL
-    .endif
-    ret
-DeleteBrush endp
-
 SetRectanglePen proc hdc:HDC, color:DWORD, penWidth:DWORD
     LOCAL canvasHdc:HDC
     LOCAL hdcTemp:HDC
@@ -1465,6 +1467,7 @@ SetRectanglePen proc hdc:HDC, color:DWORD, penWidth:DWORD
     LOCAL rect:RECT
     LOCAL brush:HBRUSH
     LOCAL br:LOGBRUSH
+    invoke DeleteBrush
     invoke GetDC, g_hWndCanvas
     mov canvasHdc, eax
     invoke CreateCompatibleDC, canvasHdc
