@@ -272,6 +272,15 @@ UpdateMainWindowTitle proc
     ret
 UpdateMainWindowTitle endp
 
+UpdateSaveMenu proc
+    .IF g_isModified == 0
+        invoke EnableMenuItem, g_hMenu, IDM_SAVE, MF_BYCOMMAND or MF_GRAYED
+    .ELSEIF
+        invoke EnableMenuItem, g_hMenu, IDM_SAVE, MF_BYCOMMAND or MF_ENABLED
+    .ENDIF    
+    ret
+UpdateSaveMenu endp
+
 LoadUndoRedoCurr proc uses esi
     LOCAL hdc:HDC
 
@@ -296,10 +305,12 @@ LoadUndoRedoCurr proc uses esi
         invoke SelectObject, g_hdcBuf, g_hdcBitmap
     .ENDIF
     mov eax, g_undoRedoCurr
-    .IF g_undoRedoSaved == eax
+    .IF g_undoRedoSaved == eax && g_isModified != 0
         mov g_isModified, 0
-    .ELSE
+        invoke UpdateSaveMenu
+    .ELSEIF g_undoRedoSaved != eax && g_isModified == 0
         mov g_isModified, 1
+        invoke UpdateSaveMenu
     .ENDIF
     invoke UpdateMainWindowTitle
     ret
@@ -378,7 +389,10 @@ SaveUndoRedo endp
 MarkSaved proc
     mov eax, g_undoRedoCurr
     mov g_undoRedoSaved, eax
-    mov g_isModified, 0
+    .IF g_isModified != 0
+        mov g_isModified, 0
+        invoke UpdateSaveMenu
+    .ENDIF
     ret
 MarkSaved endp
 
@@ -2004,6 +2018,7 @@ CanvasWinProc proc USES ebx esi,
         invoke ClearCanvas
         invoke SaveUndoRedo
         invoke MarkSaved
+        invoke UpdateSaveMenu
         invoke DragAcceptFiles, hWnd, TRUE
         invoke CanvasTrackMouse
     .ELSEIF uMsg == WM_SIZE
