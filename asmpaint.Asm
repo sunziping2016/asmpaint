@@ -2039,7 +2039,7 @@ HandleLButtonDownMessage proc wParam:WPARAM
                 invoke SetPointByIndex, 2, addr p1
                 invoke PolyBezier, g_hdcBuf, addr g_points, 4
             .endif
-            invoke InvalidateRect, g_hdcBuf, NULL, FALSE
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         .ENDIF
     .ENDIF
     ret
@@ -2313,7 +2313,15 @@ CanvasWinProc proc USES ebx esi,
         invoke Render, hWnd
     .ELSEIF uMsg == WM_LBUTTONDOWN
         .IF g_mouseInCanvas == TRUE
-            invoke HandleLButtonDownMessage, wParam
+            .IF g_toolbarStatus == IDM_MAGNIFIER
+                .IF g_zoom != 1
+                    invoke UpdateZoom, 0, 1, g_mouseCanvasX, g_mouseCanvasY
+                .ELSE
+                    invoke UpdateZoom, 0, MAX_ZOOM, g_mouseCanvasX, g_mouseCanvasY
+                .ENDIF
+            .ELSE 
+                invoke HandleLButtonDownMessage, wParam 
+            .ENDIF
         .ENDIF
     .ELSEIF uMsg == WM_MOUSEMOVE
         invoke CanvasTrackMouse
