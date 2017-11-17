@@ -6,6 +6,8 @@ include asmpaint.Inc
 UpdateScrollBarSize proto
 UpdateCursor proto
 
+; TODO: isModified change to saved index
+
 UndoRedo struct
     hBitmap HBITMAP ?
     isModified DWORD ?
@@ -88,7 +90,8 @@ UndoRedo ends
 
     debugWndProcMsg BYTE "msg: %u %u %d",0ah,0
     debugPoint BYTE "canvas: (%4d, %4d)", 0ah, 0
-    debugPrintInt BYTE "%d", 0ah, 0
+    debugPrintInt BYTE "%x", 0ah, 0
+    debugHelp BYTE "menu: %u (dropdown: %d)",0ah,0
 
     g_toolbarStatus DWORD IDM_PENCIL
     g_customColors DWORD 16 DUP(0ffffffh)
@@ -124,10 +127,11 @@ UndoRedo ends
 
     g_hasToolbar DWORD 1
     g_hasStatusBar DWORD 1
-    
+
     g_undoRedoCurr DWORD 0
     g_undoRedoSize DWORD 0    
 
+    g_isMenuOpened DWORD 0
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -628,6 +632,7 @@ SaveBitmapFile proc USES ebx
     invoke GlobalFree, lpBits
     invoke LocalFree, pbi
     mov g_isModified, 0
+    
     invoke UpdateMainWindowTitle
     ret
 SaveBitmapFile endp
@@ -759,6 +764,20 @@ ConfirmSaveModify proc
     ret
 ConfirmSaveModify endp
 
+UpdateStatusBarInfo proc, id:DWORD
+    invoke crt_printf, offset debugHelp, id, g_isMenuOpened
+    ; g_textBuffer
+    .IF id != 0
+        ; display help message
+    .ELSEIF g_isMenuOpened != 0
+        ; display empty message
+        mov g_textBuffer, 0
+    .ELSE
+        ; display welcome message
+    .ENDIF
+    ret
+UpdateStatusBarInfo endp
+
 UpdateStatusBarSize proc
     LOCAL clientRect:RECT
     LOCAL statusBarEdges[4]:DWORD
@@ -785,6 +804,15 @@ UpdateStatusBarSize proc
     invoke SendMessage, g_hWndStatusBar, SB_SETPARTS, 4, addr statusBarEdges
     ret
 UpdateStatusBarSize endp
+
+PropertyDialogProc proc hWin:HWND,uMsg:UINT,wParam:WPARAM,lParam:LPARAM
+	xor    eax,eax
+	.IF uMsg == WM_COMMAND
+	    invoke crt_printf, offset debugWndProcMsg, uMsg, wParam, lParam
+	.ENDIF
+	ret
+PropertyDialogProc endp
+
 
 WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     LOCAL hBmp:HBITMAP
@@ -824,6 +852,7 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                0, 0, 0, 0, \
                hWnd, NULL, g_hInst, NULL        
         invoke UpdateCanvasWindowPosition
+        invoke UpdateStatusBarInfo, 0
         invoke ShowWindow, g_hWndCanvas, SW_SHOW
     .ELSEIF uMsg == WM_SIZE
         invoke SendMessage, g_hWndControl, TB_AUTOSIZE, 0, 0
@@ -931,9 +960,34 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke PromptColor, 1
         .ELSEIF eax == IDM_ABOUT
             invoke MessageBox, hWnd, offset aboutDialogText, offset aboutDialogName, MB_OK or MB_ICONINFORMATION
+        .ELSEIF eax == IDM_PROPERTY
+            invoke DialogBoxParam, g_hInst, IDD_PROPERTY, g_hWnd, offset PropertyDialogProc, 0
         .ELSEIF eax >= IDM_TOOLBAR_FIRST && eax <=IDM_TOOLBAR_LAST
             mov eax, wParam
             mov g_toolbarStatus, eax
+        .ENDIF
+    .ELSEIF uMsg == WM_MENUSELECT
+        .IF wParam == 0ffff0000h
+            mov g_isMenuOpened, 0
+            invoke UpdateStatusBarInfo, 0
+        .ELSE
+            mov eax, wParam
+            shr eax, 16
+            and eax, MF_POPUP
+            .IF eax == 0
+                mov eax, wParam
+                movzx eax, ax
+                invoke UpdateStatusBarInfo, eax
+            .ELSE
+                mov g_isMenuOpened, 1
+                invoke UpdateStatusBarInfo, 0
+            .ENDIF
+        .ENDIF
+    .ELSEIF uMsg == WM_NOTIFY
+        mov edx, lParam
+        mov eax, (NMHDR ptr [edx]).code
+        .IF eax == TBN_HOTITEMCHANGE
+            invoke UpdateStatusBarInfo, (NMTBHOTITEM ptr [edx]).idNew
         .ENDIF
     .ELSEIF uMsg == WM_DROPFILES
     	invoke DragQueryFile, wParam, 0, addr g_textBuffer, MAX_FILE_NAME_SIZE
@@ -1141,20 +1195,12 @@ UpdateZoom proc uses ebx, mode:DWORD, value:DWORD, canvasX:SDWORD, canvasY:SDWOR
         mov g_zoom, ebx
         sub ebx, eax
         invoke UpdateScrollBarSize
-        .IF canvasY < 0
-            mov eax, 0
-        .ELSE
-            mov eax, canvasY
-        .ENDIF
+        mov eax, canvasY
         imul ebx
         mov ecx, SCROLL_STEP_PIXEL
         idiv ecx
         invoke UpdateScrollPosition, 0, 1, eax
-        .IF canvasX < 0
-            mov eax, 0
-        .ELSE
-            mov eax, canvasX
-        .ENDIF
+        mov eax, canvasX
         imul ebx
         mov ecx, SCROLL_STEP_PIXEL
         idiv ecx
