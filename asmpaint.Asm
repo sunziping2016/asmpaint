@@ -238,6 +238,8 @@ UndoRedo ends
     menuGroupFill DWORD IDM_FILL_DEFAULT, IDM_FILL_NOBRUSH, IDM_FILL_NOPEN, 0
     menuGroupEraserSize DWORD IDM_ERASER_SIZE1, IDM_ERASER_SIZE2, IDM_ERASER_SIZE3
                         DWORD IDM_ERASER_SIZE4, IDM_ERASER_SIZE5, 0
+
+    MAX_POINTS_NUM equ 20
 .data?
     g_hInst HINSTANCE ?
     g_cmdLine LPTSTR ?
@@ -265,7 +267,9 @@ UndoRedo ends
 
     g_tempInt1 DWORD ?
     g_tempInt2 DWORD ?
-
+    
+    g_points POINT MAX_POINTS_NUM dup(<?, ?>)
+    g_currentPointSize DWORD ?
 .code
 CreateEraser proc USES ebx
     LOCAL hdc:HDC
@@ -588,6 +592,7 @@ Redo endp
 
 StartDrawing proc
     mov g_isDrawing, TRUE
+    mov g_currentPointSize, 0
     ret
 StartDrawing endp
 
@@ -1627,7 +1632,20 @@ UpdateZoom proc uses ebx, mode:DWORD, value:DWORD, canvasX:SDWORD, canvasY:SDWOR
     ret
 UpdateZoom endp
 
+DeleteBrush proc
+    .IF g_pen != NULL
+        invoke DeleteObject, g_pen
+        mov g_pen, NULL
+    .endif
+    .IF g_brush != NULL
+        invoke DeleteObject, g_brush
+        mov g_brush, NULL
+    .endif
+    ret
+DeleteBrush endp
+
 SetPen proc hdc:HDC
+    invoke DeleteBrush
     invoke CreatePen, PS_SOLID, g_penWidth, g_foregroundColor
     mov g_pen, eax
     invoke SelectObject, hdc, eax
@@ -1643,6 +1661,7 @@ DeletePen proc
 DeletePen endp
 
 SetBrush proc hdc:HDC
+    invoke DeleteBrush
     .IF g_fillType == FILL_WITHOUT_BORDER
         invoke GetStockObject, NULL_PEN
         mov g_pen, eax
@@ -1663,18 +1682,6 @@ SetBrush proc hdc:HDC
     ret
 SetBrush endp
 
-DeleteBrush proc
-    .IF g_pen != NULL
-        invoke DeleteObject, g_pen
-        mov g_pen, NULL
-    .endif
-    .IF g_brush != NULL
-        invoke DeleteObject, g_brush
-        mov g_brush, NULL
-    .endif
-    ret
-DeleteBrush endp
-
 SetRectanglePen proc hdc:HDC, color:DWORD, penWidth:DWORD
     LOCAL canvasHdc:HDC
     LOCAL hdcTemp:HDC
@@ -1682,6 +1689,7 @@ SetRectanglePen proc hdc:HDC, color:DWORD, penWidth:DWORD
     LOCAL rect:RECT
     LOCAL brush:HBRUSH
     LOCAL br:LOGBRUSH
+    invoke DeleteBrush
     invoke GetDC, g_hWndCanvas
     mov canvasHdc, eax
     invoke CreateCompatibleDC, canvasHdc
@@ -1943,7 +1951,7 @@ UpdateCursor proc
     ret
 UpdateCursor endp
 
-SaveCurrentPos proc Uses esi, posX:DWORD, posY:DWORD, point:PTR
+SaveCurrentPos proc USES esi, posX:DWORD, posY:DWORD, point:PTR
     mov esi, point
     mov eax, posX
     mov (POINT PTR [esi]).x, eax
@@ -1951,6 +1959,53 @@ SaveCurrentPos proc Uses esi, posX:DWORD, posY:DWORD, point:PTR
     mov (POINT PTR [esi]).y, eax
     ret
 SaveCurrentPos endp
+
+SavePoint proc USES esi, x:DWORD, y:DWORD
+    mov eax, g_currentPointSize
+    .IF eax < MAX_POINTS_NUM
+        mov edx, SIZEOF POINT
+        mul edx
+        lea esi, [g_points + eax]
+        mov eax, x
+        mov (POINT PTR [esi]).x, eax
+        mov eax, y
+        mov (POINT PTR [esi]).y, eax
+        mov eax, g_currentPointSize
+        inc eax
+        mov g_currentPointSize, eax
+        invoke crt_printf, offset debugPrintInt,g_currentPointSize 
+        mov eax, 1
+    .ELSE
+        mov eax, 0
+    .endif
+    ret
+SavePoint endp
+
+GetPointByIndex proc USES esi edi, index:DWORD, point:PTR
+    mov eax, index
+    mov edx, SIZEOF POINT
+    mul edx
+    lea esi, [g_points + eax]
+    mov edi, point
+    mov eax, (POINT PTR [esi]).x
+    mov (POINT PTR [edi]).x, eax
+    mov eax, (POINT PTR [esi]).y
+    mov (POINT PTR [edi]).y, eax
+    ret
+GetPointByIndex endp
+
+SetPointByIndex proc USES esi, index:DWORD, point:PTR
+    mov eax, index
+    mov edx, SIZEOF POINT
+    mul edx
+    lea esi, [g_points + eax]
+    mov edi, point
+    mov eax, (POINT PTR [edi]).x
+    mov (POINT PTR [esi]).x, eax
+    mov eax, (POINT PTR [edi]).y
+    mov (POINT PTR [esi]).y, eax
+    ret
+SetPointByIndex endp
 
 FillWithBarrel proc fillColor:DWORD
     LOCAL crFill:DWORD
@@ -2005,6 +2060,7 @@ CalculateSquare endp
 
 HandleLButtonDownMessage proc wParam:WPARAM
     LOCAL eraserRect:RECT
+    LOCAL p1:POINT
     invoke StartCapture
     .IF g_toolbarStatus == IDM_PENCIL
         invoke StartDrawing
@@ -2051,6 +2107,33 @@ HandleLButtonDownMessage proc wParam:WPARAM
         invoke FillRect, g_hdcBuf, addr eraserRect, g_brush
         invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
         invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+    .ELSEIF g_toolbarStatus == IDM_CURVE
+        .IF g_isDrawing == FALSE
+            invoke SetPen, g_hdcBuf
+            invoke StartDrawing
+            invoke SavePoint, g_mouseCanvasX, g_mouseCanvasY
+            invoke crt_printf, offset debugPrintInt, g_currentPointSize
+        .ELSE
+            
+            invoke crt_printf, offset debugPrintInt, g_currentPointSize
+            .IF g_currentPointSize == 2
+                mov eax, g_mouseCanvasX
+                mov p1.x, eax
+                mov eax, g_mouseCanvasY
+                mov p1.y, eax
+                invoke SetPointByIndex, 1, addr p1
+                invoke SetPointByIndex, 2, addr p1
+                invoke PolyBezier, g_hdcBuf, addr g_points, 4
+            .ELSEIF g_currentPointSize == 3
+                mov eax, g_mouseCanvasX
+                mov p1.x, eax
+                mov eax, g_mouseCanvasY
+                mov p1.y, eax
+                invoke SetPointByIndex, 2, addr p1
+                invoke PolyBezier, g_hdcBuf, addr g_points, 4
+            .endif
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ENDIF
     .ENDIF
     ret
 HandleLButtonDownMessage endp
@@ -2058,6 +2141,7 @@ HandleLButtonDownMessage endp
 HandleMouseMoveMessage proc wParam:WPARAM
     LOCAL x2:SDWORD
     LOCAL y2:SDWORD
+    LOCAL p1:POINT
     mov eax, wParam
     and eax, MK_LBUTTON
     .IF eax != 0
@@ -2130,6 +2214,38 @@ HandleMouseMoveMessage proc wParam:WPARAM
             invoke LineTo, g_hdcBuf, g_mouseCanvasX, g_mouseCanvasY
             invoke SaveCurrentPos, g_mouseCanvasX, g_mouseCanvasY, addr g_previousPoint
             invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
+        .ELSEIF g_toolbarStatus == IDM_CURVE
+            invoke RestoreHdcBuffer
+            .IF g_currentPointSize == 1
+                invoke GetPointByIndex, 0, addr p1
+                invoke IsSamePoint, p1.x, p1.y, g_mouseCanvasX, g_mouseCanvasY
+                .IF eax == FALSE
+                    mov eax, g_mouseCanvasX
+                    mov p1.x, eax
+                    mov eax, g_mouseCanvasY
+                    mov p1.y, eax
+                    invoke SetPointByIndex, 1, addr p1
+                    invoke SetPointByIndex, 2, addr p1
+                    invoke SetPointByIndex, 3, addr p1
+                    invoke PolyBezier, g_hdcBuf, addr g_points, 4
+                .endif
+            .ELSEIF g_currentPointSize == 2
+                mov eax, g_mouseCanvasX
+                mov p1.x, eax
+                mov eax, g_mouseCanvasY
+                mov p1.y, eax
+                invoke SetPointByIndex, 1, addr p1
+                invoke SetPointByIndex, 2, addr p1
+                invoke PolyBezier, g_hdcBuf, addr g_points, 4
+            .ELSE
+                mov eax, g_mouseCanvasX
+                mov p1.x, eax
+                mov eax, g_mouseCanvasY
+                mov p1.y, eax
+                invoke SetPointByIndex, 2, addr p1
+                invoke PolyBezier, g_hdcBuf, addr g_points, 4
+            .endif
+            invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
         .ENDIF
     .ENDIF
     .IF g_toolbarStatus == IDM_COLOR_PICKER
@@ -2149,6 +2265,7 @@ HandleMouseMoveMessage endp
 
 HandleLButtonUpMessage proc wParam:WPARAM
     LOCAL eraserRect:RECT
+    LOCAL p1:POINT
     invoke ReleaseCapture
     invoke UpdateCursor
     .IF g_toolbarStatus == IDM_PENCIL
@@ -2186,6 +2303,26 @@ HandleLButtonUpMessage proc wParam:WPARAM
         invoke FillRect, g_hdcBuf, addr eraserRect, g_brush
         invoke DeleteRectanglePen
         invoke StopDrawing, TRUE
+    .ELSEIF g_toolbarStatus == IDM_CURVE
+        .IF g_currentPointSize == 1
+            invoke GetPointByIndex, 0, addr p1
+            invoke IsSamePoint, p1.x, p1.y, g_mouseCanvasX, g_mouseCanvasY
+            .IF eax == FALSE
+                mov eax, g_currentPointSize
+                inc eax
+                mov g_currentPointSize, eax
+            .ELSE 
+                invoke DeletePen
+                invoke StopDrawing, FALSE
+            .ENDIF
+        .ELSEIF g_currentPointSize == 2
+            mov eax, g_currentPointSize
+            inc eax
+            mov g_currentPointSize, eax
+        .ELSE
+            invoke DeletePen
+            invoke StopDrawing, TRUE
+        .ENDIF
     .ENDIF
     invoke StopCapture
     ret
@@ -2270,7 +2407,15 @@ CanvasWinProc proc USES ebx esi,
         invoke Render, hWnd
     .ELSEIF uMsg == WM_LBUTTONDOWN
         .IF g_mouseInCanvas == TRUE
-            invoke HandleLButtonDownMessage, wParam
+            .IF g_toolbarStatus == IDM_MAGNIFIER
+                .IF g_zoom != 1
+                    invoke UpdateZoom, 0, 1, g_mouseCanvasX, g_mouseCanvasY
+                .ELSE
+                    invoke UpdateZoom, 0, MAX_ZOOM, g_mouseCanvasX, g_mouseCanvasY
+                .ENDIF
+            .ELSE 
+                invoke HandleLButtonDownMessage, wParam 
+            .ENDIF
         .ENDIF
     .ELSEIF uMsg == WM_MOUSEMOVE
         invoke CanvasTrackMouse
