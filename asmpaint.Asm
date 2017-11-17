@@ -10,7 +10,6 @@ UpdateCursor proto
 
 UndoRedo struct
     hBitmap HBITMAP ?
-    isModified DWORD ?
     nWidth DWORD ?
     nHeight DWORD ?
 UndoRedo ends
@@ -137,6 +136,7 @@ UndoRedo ends
 
     g_undoRedoCurr DWORD 0
     g_undoRedoSize DWORD 0
+    g_undoRedoSaved SDWORD 0
 
     g_showCursor DWORD 1
 
@@ -170,6 +170,7 @@ UndoRedo ends
 
     g_tempInt1 DWORD ?
     g_tempInt2 DWORD ?
+
 .code
 CreateEraser proc USES ebx
     LOCAL hdc:HDC
@@ -280,8 +281,6 @@ LoadUndoRedoCurr proc uses esi
     lea esi, [g_undoRedo + eax]
     mov eax, (UndoRedo ptr [esi]).hBitmap
     mov g_hdcDrawingBitmap, eax
-    mov eax, (UndoRedo ptr [esi]).isModified
-    mov g_isModified, eax
     invoke SelectObject, g_hdcDrawingBuf, g_hdcDrawingBitmap
     mov ecx, (UndoRedo ptr [esi]).nWidth
     mov edx, (UndoRedo ptr [esi]).nHeight
@@ -295,6 +294,12 @@ LoadUndoRedoCurr proc uses esi
         mov g_hdcBitmap, eax
         invoke ReleaseDC, g_hWnd, hdc
         invoke SelectObject, g_hdcBuf, g_hdcBitmap
+    .ENDIF
+    mov eax, g_undoRedoCurr
+    .IF g_undoRedoSaved == eax
+        mov g_isModified, 0
+    .ELSE
+        mov g_isModified, 1
     .ENDIF
     invoke UpdateMainWindowTitle
     ret
@@ -340,9 +345,15 @@ SaveUndoRedo proc uses ebx
     .WHILE ebx < g_undoRedoSize
         invoke RemoveUndoRedo, ebx
     .ENDW
+    .IF g_undoRedoSaved > ebx
+        mov g_undoRedoSaved, -1
+    .ENDIF
     .IF g_undoRedoSize == UNDO_MAX_TIMES
         invoke RemoveUndoRedo, 0
         dec g_undoRedoCurr
+        .IF g_undoRedoSaved != -1
+            dec g_undoRedoSaved
+        .ENDIF
     .ENDIF
     mov eax, g_undoRedoSize
     mov edx, sizeof UndoRedo
@@ -350,8 +361,6 @@ SaveUndoRedo proc uses ebx
     lea ebx, [g_undoRedo + eax]
     invoke MakeBitmapCopy, g_hdcBuf, g_canvasWidth, g_canvasHeight
     mov (UndoRedo ptr [ebx]).hBitmap, eax
-    mov eax, g_isModified
-    mov (UndoRedo ptr [ebx]).isModified, eax
     mov eax, g_canvasWidth
     mov (UndoRedo ptr [ebx]).nWidth, eax
     mov eax, g_canvasHeight
@@ -365,6 +374,13 @@ SaveUndoRedo proc uses ebx
     invoke UpdateUndoRedoMenu
     ret
 SaveUndoRedo endp
+
+MarkSaved proc
+    mov eax, g_undoRedoCurr
+    mov g_undoRedoSaved, eax
+    mov g_isModified, 0
+    ret
+MarkSaved endp
 
 ClearCanvas proc
     LOCAL canvasRect:RECT
@@ -437,7 +453,6 @@ StartDrawing endp
 
 StopDrawing proc applyChange:DWORD ;Bool    
     .IF applyChange == TRUE
-        mov g_isModified, TRUE
         invoke SaveUndoRedo
     .ELSE
         invoke RestoreHdcBuffer
@@ -567,9 +582,9 @@ LoadBitmapFromFile proc hWnd:HWND, pfilename:PTR
     mov eax, bitmapHandle
     mov g_hdcBitmap, eax
     invoke SelectObject, g_hdcBuf, g_hdcBitmap
-    mov g_isModified, FALSE
     invoke ClearUndoRedo
     invoke SaveUndoRedo
+    invoke MarkSaved
     invoke UpdateScrollBarSize
     invoke UpdateMainWindowTitle
     invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
@@ -694,8 +709,7 @@ SaveBitmapFile proc USES ebx
     invoke CloseHandle, hf
     invoke GlobalFree, lpBits
     invoke LocalFree, pbi
-    mov g_isModified, 0
-    
+    invoke MarkSaved
     invoke UpdateMainWindowTitle
     ret
 SaveBitmapFile endp
@@ -1040,13 +1054,13 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             .ENDIF
             mov g_canvasWidth, DEFAULT_CANVAS_WIDTH
             mov g_canvasHeight, DEFAULT_CANVAS_HEIGHT
-            mov g_isModified, 0
             mov g_bitmapName, 0
             invoke DeleteObject, g_hdcBitmap
             invoke InitCanvas
             invoke ClearCanvas
             invoke ClearUndoRedo
             invoke SaveUndoRedo
+            invoke MarkSaved
             invoke UpdateScrollBarSize
             invoke UpdateMainWindowTitle
             invoke InvalidateRect, g_hWndCanvas, NULL, FALSE
@@ -1123,7 +1137,6 @@ WndProc proc USES ebx, hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                 mov edx, g_tempInt2
                 .IF ecx != g_canvasWidth || edx != g_canvasHeight
                     invoke ResizeCanvas, ecx, edx
-                    mov g_isModified, 1
                     invoke SaveUndoRedo
                     invoke UpdateScrollBarSize
                     invoke UpdateMainWindowTitle
@@ -1990,6 +2003,7 @@ CanvasWinProc proc USES ebx esi,
         invoke InitUndoRedo
         invoke ClearCanvas
         invoke SaveUndoRedo
+        invoke MarkSaved
         invoke DragAcceptFiles, hWnd, TRUE
         invoke CanvasTrackMouse
     .ELSEIF uMsg == WM_SIZE
